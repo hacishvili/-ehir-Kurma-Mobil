@@ -11,8 +11,7 @@ export const CONFIG = {
 
   startMoney: 1500,
   buildCostGrowth: 1.25, // aynı türden her yeni bina bu kadar kat pahalı
-  sellRefund: 0.5,       // satınca ödenen paranın yarısı geri gelir
-  netWorthBuildingRate: 0.7, // net değerde binalar ödenen fiyatın %70'i sayılır
+  sellRate: 0.8,         // bina piyasa değerinin %80'ine satılır (piyasa değeri = ödenen × endeks / alıştaki endeks)
 
   // Etki alanı
   stackCapPerType: 30,   // aynı tür binadan gelen etki en fazla ±%30
@@ -46,6 +45,19 @@ export const CONFIG = {
   diamondsPerLevel: 2,
   startDiamonds: 5,
   rushDiamondsPerHour: 1, // kalan her (başlamış) saat için 1 elmas
+
+  // Emlak piyasası: her mahallenin değer endeksi (%)
+  market: {
+    min: 70, max: 140, start: 100,
+    driftPerHour: 0.15,        // endeks her oyun saatinde hedefe kalan farkın ~%15'i kadar yaklaşır
+    happyWeight: 20,           // memnun kiracı oranı × 20
+    vacantWeight: 10,          // boş ev oranı × -10
+    bonusWeight: 0.5,          // ortalama konum bonusu × 0.5 (en çok +15, en az -10)
+    artistEach: 3, artistMax: 15, // her kiracılı sanatçı +3 (en çok +15)
+    eventEveryHours: 24,       // her 24 oyun saatinde bir mahallede bir olay
+    historyEveryHours: 6,      // grafik için 6 saatte bir kayıt
+    historyLength: 28,
+  },
 
   // Koleksiyon: kira toplarken düşen parçalar; set tamamlanınca kalıcı kira bonusu
   collectionDropChance: 0.12,
@@ -288,6 +300,21 @@ export const TENANTS = {
     likes: ['gokdelen', 'saatkulesi', 'dekor-heykel'], dislikes: ['atolye', 'fabrika', 'lojistik', 'stadyum'],
   },
 };
+
+// Piyasa olayları: effect endeks hedefine eklenir, hours kadar sürer. hoods verilirse yalnız oralarda olur.
+export const MARKET_EVENTS = [
+  { id: 'metro', text: 'Metro hattı geliyor', effect: 15, hours: 48 },
+  { id: 'festival', text: 'Mahalle festivali', effect: 6, hours: 24 },
+  { id: 'avm', text: 'Yakına AVM açılacağı söyleniyor', effect: 8, hours: 36 },
+  { id: 'turizm', text: 'Turizm sezonu başladı', effect: 14, hours: 48, hoods: ['sahil'] },
+  { id: 'merkez', text: 'Büyük bir şirket genel merkezini taşıyor', effect: 14, hours: 48, hoods: ['is'] },
+  { id: 'ihracat', text: 'İhracat rekoru: fabrikalar tam kapasite', effect: 10, hours: 36, hoods: ['sanayi'] },
+  { id: 'unlu', text: 'Ünlü bir oyuncu buraya taşındı', effect: 12, hours: 36, hoods: ['tepe', 'sahil'] },
+  { id: 'durgunluk', text: 'Ekonomik durgunluk', effect: -12, hours: 48 },
+  { id: 'sel', text: 'Nehir taştı, sel uyarısı', effect: -10, hours: 36, hoods: ['eski'] },
+  { id: 'kirlilik', text: 'Hava kirliliği şikayetleri arttı', effect: -8, hours: 36, hoods: ['sanayi', 'is'] },
+  { id: 'yol', text: 'Uzun süren yol çalışması', effect: -6, hours: 24 },
+];
 
 export const COLLECTION = {
   tapu: { name: 'Tapu', image: 'koleksiyon-tapu' },

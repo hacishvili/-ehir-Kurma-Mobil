@@ -103,6 +103,9 @@ function drainEvents(t) {
       buzz(12);
     } else if (e.type === 'levelUp') {
       showLevelUp(e.level, e.reward, e.diamonds);
+    } else if (e.type === 'marketEvent') {
+      const where = e.hood === s.hood ? '' : `${HOODS[e.hood].name}: `;
+      toast(`📰 ${where}${e.text} (${e.effect > 0 ? '+' : ''}${e.effect} endeks)`, e.effect < 0);
     } else if (e.type === 'hoodOpened') {
       toast(`${HOODS[e.id].name} açıldı! Mahalle menüsünden geçebilirsin.`);
     } else if (e.type === 'collectionDrop') {
@@ -494,9 +497,17 @@ function demandChip(met, demand) {
   return `<span class="chip ${met ? 'good' : 'bad'}">${met ? '✓' : '✗'} ${G.demandText(demand)}</span>`;
 }
 
+// Binanın piyasa değeri: alış fiyatına göre ne kadar değerlendi
+function valueLine(b) {
+  const v = G.marketValue(s, b);
+  const diff = Math.round((v / (b.paid || 1) - 1) * 100);
+  const chip = diff > 0 ? `<span class="chip good">▲ %${diff}</span>` : diff < 0 ? `<span class="chip bad">▼ %${-diff}</span>` : '<span class="chip">±%0</span>';
+  return `<dl class="kv"><dt>Piyasa değeri</dt><dd>${G.formatMoney(v)} 🪙 ${chip}</dd><dt>Alış</dt><dd>${G.formatMoney(b.paid || 0)} 🪙</dd></dl>`;
+}
+
 // Satış butonu iki dokunuşla onaylanır (tarayıcı onay penceresi kullanılmaz)
 function sellButton(b) {
-  const refund = Math.round((b.paid || 0) * CONFIG.sellRefund);
+  const refund = G.sellValue(s, b);
   return `<button type="button" class="btn danger" data-act="sell">Sat (+${G.formatMoney(refund)})</button>`;
 }
 
@@ -539,6 +550,7 @@ function openBuilding(id) {
           <div class="meter" style="margin-top:6px"><span data-live="meter" data-prop="width" style="background:var(--coin);width:0"></span></div></div>
           <button type="button" class="btn coin" data-act="collect">Topla</button>`;
       }
+      html += valueLine(b);
       html += `<div class="btns"><button type="button" class="btn" data-act="move">Taşı (bedava)</button>${sellButton(b)}</div>`;
       return html;
     },
@@ -603,6 +615,7 @@ function openHouse(id) {
             <p class="sub" style="margin:0">Toplanmayan her saat memnuniyet ${CONFIG.satLatePerHour} puan düşer. Kira kaybolmaz.</p>`;
         }
       }
+      html += valueLine(h);
       html += `<div class="btns"><button type="button" class="btn" data-act="move">Taşı (bedava)</button>${sellButton(h)}</div>`;
       return html;
     },
@@ -668,7 +681,7 @@ function openBuild() {
   openSheet({
     sig: () => `${s.level}|${Math.floor(s.money / 25)}|${s.version}`,
     render: () => {
-      let html = `<h2>İnşa et · ${G.activeHood().name}</h2>`;
+      let html = `<h2>İnşa et · ${G.activeHood().name}</h2><p class="sub">Fiyatlar mahalle endeksine göre: %${Math.round(G.marketIndex(s))}. Endeks düşükken inşa et, yükselince değerlensin.</p>`;
       for (const [cat, info] of Object.entries(CATEGORIES)) {
         const items = Object.entries(BUILDINGS).filter(([, d]) => d.cat === cat);
         html += `<div class="cat-title"><h3>${info.name}</h3><small>${info.hint}</small></div><div class="blist">`;
@@ -725,9 +738,11 @@ function openParcel(px, py) {
 function openHoods() {
   view.selectedId = null;
   openSheet({
-    sig: () => `${s.hood}|${s.hoodsOpen.join()}|${s.level}|${Math.floor(s.money / 1000)}`,
+    sig: () => `${s.hood}|${s.hoodsOpen.join()}|${s.level}|${Math.floor(s.money / 1000)}|${s.hoodsOpen.map(id => Math.round(G.marketIndex(s, id))).join()}|${G.eventOf(s)?.id}`,
     render: () => {
-      let html = '<h2>Mahalleler</h2><p class="sub">Para, seviye ve elmas ortak; her mahallenin kendi arsası, binaları ve kuralı var.</p><div class="hoods">';
+      let html = '<h2>Mahalleler</h2><p class="sub">Para, seviye ve elmas ortak; her mahallenin kendi arsası, binaları ve kuralı var.</p>';
+      html += marketCard();
+      html += '<div class="hoods">';
       for (const [id, hd] of Object.entries(HOODS)) {
         const open = G.hoodUnlocked(s, id);
         const current = s.hood === id;
@@ -736,8 +751,9 @@ function openHoods() {
         else if (open) action = `<button type="button" class="btn primary small" data-act="go" data-id="${id}">Git</button>`;
         else if (s.level < hd.unlock) action = `<span class="chip">🔒 Seviye ${hd.unlock}</span>`;
         else action = `<button type="button" class="btn coin small" data-act="open" data-id="${id}" ${s.money < hd.openCost ? 'disabled' : ''}>Aç · ${G.formatMoney(hd.openCost)}</button>`;
+        const idxChip = open ? ` <span class="chip ${G.marketIndex(s, id) >= 100 ? 'good' : 'bad'}">%${Math.round(G.marketIndex(s, id))}</span>` : '';
         html += `<div class="hood ${current ? 'current' : ''} ${open ? '' : 'locked'}">
-          <span class="hi">${hd.icon}</span><span class="hn">${hd.name}</span>${action}
+          <span class="hi">${hd.icon}</span><span class="hn">${hd.name}${idxChip}</span>${action}
           <span class="hh">${hd.hint}</span></div>`;
       }
       return html + '</div>';
@@ -747,6 +763,32 @@ function openHoods() {
       go: ds => goHood(ds.id),
     },
   });
+}
+
+// Görüntülenen mahallenin piyasa kartı: endeks, grafik, bileşenler, olay
+function marketCard() {
+  const idx = G.marketIndex(s);
+  const target = G.marketTarget(s);
+  const { parts, houses } = G.marketBreakdown(s);
+  const ev = G.eventOf(s);
+  const hist = [...G.marketOf(s).hist, Math.round(idx)];
+  // grafik aralığı veriye göre (100 çizgisi her zaman görünür)
+  const lo = Math.min(95, ...hist) - 3, hi = Math.max(105, ...hist) + 3, W = 300, Hh = 56;
+  const pts = hist.map((v, i) => `${(i / Math.max(1, hist.length - 1) * W).toFixed(1)},${(Hh - (v - lo) / (hi - lo) * Hh).toFixed(1)}`).join(' ');
+  const y100 = (Hh - (100 - lo) / (hi - lo) * Hh).toFixed(1);
+  const trend = target > idx + 0.5 ? '▲ yükseliyor' : target < idx - 0.5 ? '▼ düşüyor' : '• sabit';
+  const row = (label, v) => `<dt>${label}</dt><dd style="color:${v > 0 ? 'var(--good)' : v < 0 ? 'var(--bad)' : 'inherit'}">${v > 0 ? '+' : ''}${Math.round(v)}</dd>`;
+  return `<div class="market">
+    <div class="row"><div class="grow"><div class="sub" style="margin:0">${G.activeHood().name} · emlak endeksi</div>
+      <div class="big-num" style="color:var(--text)">%${Math.round(idx)}</div></div>
+      <span class="chip ${target >= idx ? 'good' : 'bad'}">${trend} → %${Math.round(target)}</span></div>
+    <svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none" class="spark" aria-label="Endeks geçmişi">
+      <line x1="0" x2="${W}" y1="${y100}" y2="${y100}" class="spark-base"/>
+      <polyline points="${pts}" class="spark-line"/></svg>
+    ${ev ? `<div class="news ${ev.effect < 0 ? 'bad' : ''}">📰 <b>${ev.text}</b> · ${ev.effect > 0 ? '+' : ''}${ev.effect} · ${G.formatDuration(ev.until - s.gameTime)} kaldı</div>` : ''}
+    <dl class="kv">${row('Memnun kiracılar', parts.happy)}${row('Boş evler', parts.vacant)}${row('Yerleşim (ortalama bonus)', parts.placement)}${row('Sanatçılar', parts.artists)}${ev ? row('Olay', ev.effect) : ''}</dl>
+    <p class="sub" style="margin:0">${houses ? 'Endeks 70–140 arasında hedefe doğru yavaşça kayar. Bina ve arsa fiyatları endeksle değişir; binalar endeks yükselince değerlenir.' : 'Bu mahallede henüz ev yok. Ev kurup kiracı yerleştirdikçe endeks hareketlenir.'}</p>
+  </div>`;
 }
 
 function goHood(id) {

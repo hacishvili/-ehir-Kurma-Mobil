@@ -144,3 +144,13 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 - Alt menüye Mahalle düğmesi; mahalle listesi açma/geçme. Görevlere "Seviye 8" ve "Sahil'i aç" eklendi. Denizde parıltı.
 - Kayıt uyumu: eski kayıtlar Eski Çarşı'da açılır. 6 yeni test (toplam 28).
 - Not: `game.js` görüntülenen mahalleyi modül düzeyinde tutar (`setActiveHood`); tek oyun durumu olduğu için sorun değil.
+
+## 2026-11-23 — Emlak piyasası
+
+- Her açık mahallenin %70–140 arası endeksi var (`s.market`). Endeks hedefe yavaşça yaklaşır (saatte farkın ~%15'i).
+- Hedef = 100 + memnun kiracı oranı ×20 − boş ev oranı ×10 + ortalama konum bonusu ×0,5 (−10..+15) + kiracılı sanatçı ×3 (en çok +15) + olay etkisi. Rakamlar `CONFIG.market`.
+- Olaylar (`MARKET_EVENTS`): 24 oyun saatinde bir, açık bir mahallede 24–48 saatlik olay (metro +15, turizm +14 Sahil'de, durgunluk −12, sel −10 Eski Çarşı'da ...). Haber olarak bildirilir.
+- Al-sat: bina ve arsa fiyatı endeksle çarpılır. Bina alındığı endeksi saklar (`paidIndex`); piyasa değeri = ödenen × şimdiki endeks / alıştaki endeks; satış = değerin %80'i. Ucuzken kurup değerlenince satmak kâr getirir.
+- Net değer artık binaların satış değeri + arsalar (endeksle).
+- Ekran: Mahalle menüsünün başında piyasa kartı (endeks, yön, grafik, bileşenler, olay); her mahallenin yanında endeksi; bina panelinde piyasa değeri ve alış; İnşa menüsünde endeks notu.
+- 3 yeni test (toplam 31).

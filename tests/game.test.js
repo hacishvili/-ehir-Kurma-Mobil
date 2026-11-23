@@ -344,3 +344,42 @@ test('geri dönünce yokken biriken ticari gelir eklenir', () => {
   G.switchHood(s, 'eski');
   assert.ok(s.buildings[k].stored > 70);
 });
+
+test('piyasa: memnun kiracılar endeksi yükseltir, boş evler düşürür', () => {
+  const s = rich();
+  const ids = [G.build(s, 'ev', AX + 1, 4).id, G.build(s, 'ev', AX + 1, 5).id];
+  assert.ok(G.marketBreakdown(s).base < 100, 'boş evler düşürür');
+  G.build(s, 'park', AX + 2, 4);
+  for (const id of ids) {
+    s.buildings[id].cards = [{ tenant: 'emekli', minutes: 720, demand: { kind: 'near', type: 'park' } }];
+    G.signContract(s, id, 0);
+  }
+  assert.ok(G.marketBreakdown(s).base > 110, 'memnun kiracı + iyi yerleşim');
+  s.market.nextEventAt = Infinity;
+  G.advance(s, 12 * G.HOUR);
+  assert.ok(G.marketIndex(s) > 105, 'endeks zamanla hedefe yaklaşır');
+});
+
+test('piyasa: endeks yükselince bina değerlenir, ucuzken alınan pahalıya satılır', () => {
+  const s = rich();
+  s.market.hoods.eski.index = 80;
+  const cost80 = G.buildCost(s, 'villa');
+  const id = G.build(s, 'villa', AX + 1, 5).id;
+  assert.equal(s.buildings[id].paidIndex, 80);
+  s.market.hoods.eski.index = 130;
+  const v = G.sellValue(s, s.buildings[id]);
+  assert.ok(v > cost80, 'kârla satış');
+  const money = s.money;
+  assert.equal(G.sell(s, id).refund, v);
+  assert.equal(s.money, money + v);
+});
+
+test('piyasa olayı hedefi değiştirir ve süresi bitince kalkar', () => {
+  const s = rich();
+  s.market.nextEventAt = Infinity;
+  const before = G.marketTarget(s);
+  G.startRandomEvent(s, Math.random, 'eski', 'metro');
+  assert.equal(G.marketTarget(s), before + 15);
+  G.advance(s, 49 * G.HOUR);
+  assert.equal(G.eventOf(s), null);
+});

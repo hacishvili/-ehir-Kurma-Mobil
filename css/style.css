@@ -277,3 +277,10 @@ h3 { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin
 .hood .hn { font-weight: 800; font-size: 16px; }
 .hood .hh { grid-column: 2 / 4; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
 .hood.locked .hi, .hood.locked .hn { opacity: .55; }
+
+.market { background: #fff; border-radius: 16px; padding: 12px; display: grid; gap: 8px; box-shadow: 0 0 0 1.5px var(--line), 0 3px 0 var(--line); }
+.spark { width: 100%; height: 56px; display: block; }
+.spark-line { fill: none; stroke: var(--accent); stroke-width: 2.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.spark-base { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.news { background: #e9f6ee; border-radius: 10px; padding: 7px 10px; font-size: 13px; }
+.news.bad { background: #fbe9e7; }

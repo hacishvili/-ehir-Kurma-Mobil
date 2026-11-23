@@ -1,5 +1,5 @@
 // Oyun mantığı. Ekran çizimi ve dokunma burada yok; böylece testler tarayıcısız çalışır.
-import { CONFIG, BUILDINGS, TENANTS, QUESTS, TERRAIN, COLLECTION, HOODS, TALL } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, QUESTS, TERRAIN, COLLECTION, HOODS, TALL, MARKET_EVENTS } from './data.js';
 
 export const MIN = 60 * 1000;
 export const HOUR = 60 * MIN;
@@ -41,6 +41,8 @@ export function hydrate(s) {
   for (const k of Object.keys(COLLECTION)) s.collection[k] = s.collection[k] || 0;
   if (s.collectionSets === undefined) s.collectionSets = 0;
   if (!s.hood) { s.hood = 'eski'; s.hoodsOpen = ['eski']; s.hoods = {}; }
+  if (!s.market) s.market = { nextEventAt: s.gameTime + CONFIG.market.eventEveryHours * HOUR / 2, nextHistAt: s.gameTime, hoods: {} };
+  for (const id of s.hoodsOpen) ensureMarket(s, id);
   setActiveHood(s.hood);
   Object.defineProperty(s, '_cache', { value: { version: -1 }, writable: true, enumerable: false });
   Object.defineProperty(s, 'events', { value: [], writable: true, enumerable: false });
@@ -118,6 +120,7 @@ export function openHood(s, id) {
   if (s.money < hd.openCost) return fail('Yeterli para yok.');
   s.money -= hd.openCost;
   s.hoodsOpen.push(id);
+  ensureMarket(s, id);
   s.hoods[id] = { buildings: {}, parcels: CONFIG.startParcels.map(([px, py]) => `${px},${py}`), parcelsPaid: hd.openCost, leftAt: s.gameTime };
   addXp(s, Math.round(hd.openCost / 200));
   emit(s, 'hoodOpened', { id });
@@ -551,11 +554,12 @@ export function collectAll(s) {
 // ---------- Zaman ----------
 
 // realMs gerçek zamanı oyun hızına göre ilerletir.
-export function advance(s, realMs) {
+export function advance(s, realMs, rng = Math.random) {
   if (realMs <= 0) return;
   const dt = realMs * s.speed;
   s.gameTime += dt;
   accrueIncome(s, dt);
+  marketTick(s, dt, rng);
 }
 
 // Görüntülenen mahallede ticari gelir biriktir (diğer mahalleler geçişte hesaplanır)
@@ -603,7 +607,7 @@ export function countOf(s, type) {
 export function buildCost(s, type) {
   const d = def(type);
   if (!d.cost) return 0;
-  return Math.round(d.cost * Math.pow(CONFIG.buildCostGrowth, countOf(s, type)));
+  return Math.round(d.cost * Math.pow(CONFIG.buildCostGrowth, countOf(s, type)) * marketIndex(s) / 100);
 }
 
 export function canPlace(s, x, y, ignoreId = null, size = 1) {
@@ -632,7 +636,7 @@ export function build(s, type, x, y) {
   if (s.money < cost) return fail('Yeterli para yok.');
   s.money -= cost;
   const id = `b${s.nextId++}`;
-  s.buildings[id] = { id, type, x, y, paid: cost, contract: null, renewal: null, cards: null, stored: 0 };
+  s.buildings[id] = { id, type, x, y, paid: cost, paidIndex: marketIndex(s), contract: null, renewal: null, cards: null, stored: 0 };
   changed(s);
   if (cost > 0) addXp(s, Math.max(1, Math.round(cost / 25)));
   emit(s, 'built', { id, type });
@@ -656,7 +660,7 @@ export function sell(s, id) {
   let collected = 0;
   if (isHouse(b) && houseStatus(s, b) === 'hazir') collected = collectRent(s, id).amount || 0;
   else if (hasIncome(b) && b.stored >= 1) collected = collectIncome(s, id).amount || 0;
-  const refund = Math.round((b.paid || 0) * CONFIG.sellRefund);
+  const refund = sellValue(s, b);
   s.money += refund;
   delete s.buildings[id];
   changed(s);
@@ -666,7 +670,7 @@ export function sell(s, id) {
 // ---------- Arsa ----------
 
 export function parcelCost(s) {
-  return Math.round(H.parcelBaseCost * Math.pow(CONFIG.parcelGrowth, s.parcels.length - CONFIG.startParcels.length));
+  return Math.round(H.parcelBaseCost * Math.pow(CONFIG.parcelGrowth, s.parcels.length - CONFIG.startParcels.length) * marketIndex(s) / 100);
 }
 
 // Bu mahallede açılabilir mi (Tepe Villaları'nda arsa az)
@@ -691,6 +695,103 @@ export function buyParcel(s, px, py) {
   return ok({ cost });
 }
 
+// ---------- Emlak piyasası ----------
+
+function ensureMarket(s, id) {
+  if (!s.market) return;
+  if (!s.market.hoods[id]) {
+    s.market.hoods[id] = { index: CONFIG.market.start, base: CONFIG.market.start, event: null, hist: [CONFIG.market.start] };
+  }
+}
+
+export function marketOf(s, id = s.hood) {
+  return s.market?.hoods[id] || { index: 100, base: 100, event: null, hist: [100] };
+}
+
+export function marketIndex(s, id = s.hood) {
+  return Math.round(marketOf(s, id).index * 10) / 10;
+}
+
+// Binanın piyasa değeri: ödenen × (şimdiki endeks / alındığı andaki endeks)
+export function marketValue(s, b, idx = marketIndex(s)) {
+  return (b.paid || 0) * idx / (b.paidIndex || 100);
+}
+
+export function sellValue(s, b, idx) {
+  return Math.round(marketValue(s, b, idx) * CONFIG.sellRate);
+}
+
+// Görüntülenen mahallenin endeks hedefi ve bileşenleri
+export function marketBreakdown(s) {
+  const M = CONFIG.market;
+  const houses = Object.values(s.buildings).filter(isHouse);
+  const parts = { happy: 0, vacant: 0, placement: 0, artists: 0 };
+  if (houses.length) {
+    const happy = houses.filter(h => h.contract && satisfaction(s, h) >= CONFIG.satHappy).length;
+    const vacant = houses.filter(h => !h.contract && !h.renewal).length;
+    const avgBonus = houses.reduce((a, h) => a + bonusAt(s, h.x, h.y).total, 0) / houses.length;
+    const artists = houses.filter(h => h.contract?.tenant === 'sanatci').length;
+    parts.happy = happy / houses.length * M.happyWeight;
+    parts.vacant = -vacant / houses.length * M.vacantWeight;
+    parts.placement = clamp(avgBonus * M.bonusWeight, -10, 15);
+    parts.artists = Math.min(M.artistMax, artists * M.artistEach);
+  }
+  const base = clamp(100 + parts.happy + parts.vacant + parts.placement + parts.artists, M.min, M.max);
+  return { parts, base, houses: houses.length };
+}
+
+export function eventOf(s, id = s.hood) {
+  const e = marketOf(s, id).event;
+  if (!e || e.until <= s.gameTime) return null;
+  return { ...MARKET_EVENTS.find(m => m.id === e.id), until: e.until };
+}
+
+export function marketTarget(s, id = s.hood) {
+  const m = marketOf(s, id);
+  const ev = eventOf(s, id);
+  return clamp(m.base + (ev ? ev.effect : 0), CONFIG.market.min, CONFIG.market.max);
+}
+
+function marketTick(s, dt, rng) {
+  if (!s.market) return;
+  const M = CONFIG.market;
+  const cur = s.market.hoods[s.hood];
+  if (cur) cur.base = marketBreakdown(s).base;
+  // endeks hedefe yavaşça yaklaşır
+  const k = 1 - Math.exp(-M.driftPerHour * dt / HOUR);
+  for (const id of s.hoodsOpen) {
+    const m = s.market.hoods[id];
+    if (!m) continue;
+    if (m.event && m.event.until <= s.gameTime) m.event = null;
+    m.index = clamp(m.index + (marketTarget(s, id) - m.index) * k, M.min, M.max);
+  }
+  // olaylar
+  for (let i = 0; i < 10 && s.gameTime >= s.market.nextEventAt; i++) {
+    s.market.nextEventAt += M.eventEveryHours * HOUR;
+    startRandomEvent(s, rng);
+  }
+  // grafik kaydı
+  for (let i = 0; i < 40 && s.gameTime >= s.market.nextHistAt; i++) {
+    s.market.nextHistAt += M.historyEveryHours * HOUR;
+    for (const id of s.hoodsOpen) {
+      const m = s.market.hoods[id];
+      m.hist.push(Math.round(m.index));
+      if (m.hist.length > M.historyLength) m.hist.shift();
+    }
+  }
+}
+
+export function startRandomEvent(s, rng = Math.random, hoodId = null, eventId = null) {
+  const free = s.hoodsOpen.filter(id => !eventOf(s, id));
+  if (!free.length) return null;
+  const id = hoodId || free[Math.floor(rng() * free.length) % free.length];
+  const pool = MARKET_EVENTS.filter(e => !e.hoods || e.hoods.includes(id));
+  const ev = eventId ? MARKET_EVENTS.find(e => e.id === eventId) : pool[Math.floor(rng() * pool.length) % pool.length];
+  s.market.hoods[id].event = { id: ev.id, until: s.gameTime + ev.hours * HOUR };
+  emit(s, 'marketEvent', { hood: id, text: ev.text, effect: ev.effect });
+  return ev;
+}
+
 // ---------- Seviye ----------
 
 export function xpToNext(level) {
@@ -709,11 +810,14 @@ export function addXp(s, amount) {
   }
 }
 
+// Net değer: nakit + binaların satış değeri + arsalar (güncel endeksle)
 export function netWorth(s) {
   let v = s.money;
-  for (const hd of [{ buildings: s.buildings, parcelsPaid: s.parcelsPaid }, ...Object.values(s.hoods || {})]) {
-    v += hd.parcelsPaid || 0;
-    for (const b of Object.values(hd.buildings)) v += (b.paid || 0) * CONFIG.netWorthBuildingRate;
+  const all = [[s.hood, { buildings: s.buildings, parcelsPaid: s.parcelsPaid }], ...Object.entries(s.hoods || {})];
+  for (const [id, hd] of all) {
+    const idx = marketIndex(s, id);
+    v += (hd.parcelsPaid || 0) * idx / 100;
+    for (const b of Object.values(hd.buildings)) v += sellValue(s, b, idx);
   }
   return Math.round(v);
 }
