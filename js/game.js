@@ -1,5 +1,5 @@
 // Oyun mantığı. Ekran çizimi ve dokunma burada yok; böylece testler tarayıcısız çalışır.
-import { CONFIG, BUILDINGS, TENANTS, QUESTS, TERRAIN, MAP_TERRAIN } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, QUESTS, TERRAIN, MAP_TERRAIN, COLLECTION } from './data.js';
 
 export const MIN = 60 * 1000;
 export const HOUR = 60 * MIN;
@@ -23,12 +23,20 @@ export function createState() {
     stats: { contractsSigned: 0, rentsCollected: 0, moneyEarned: 0 },
     questIndex: 0,
     questDone: false,
+    diamonds: CONFIG.startDiamonds,
+    collection: Object.fromEntries(Object.keys(COLLECTION).map(k => [k, 0])),
+    collectionSets: 0,
   };
   return hydrate(s);
 }
 
 // Kayıttan gelen ya da yeni durumu çalışmaya hazırlar (önbellekler kaydedilmez).
 export function hydrate(s) {
+  // eski kayıtlarda olmayan alanlar
+  if (s.diamonds === undefined) s.diamonds = CONFIG.startDiamonds;
+  if (!s.collection) s.collection = {};
+  for (const k of Object.keys(COLLECTION)) s.collection[k] = s.collection[k] || 0;
+  if (s.collectionSets === undefined) s.collectionSets = 0;
   Object.defineProperty(s, '_cache', { value: { version: -1 }, writable: true, enumerable: false });
   Object.defineProperty(s, 'events', { value: [], writable: true, enumerable: false });
   Object.defineProperty(s, 'version', { value: 0, writable: true, enumerable: false });
@@ -272,7 +280,7 @@ function makeDemand(s, tenantId, rng) {
 }
 
 export function generateCards(s, house, rng = Math.random) {
-  const ids = Object.keys(TENANTS);
+  const ids = availableTenants(s, house.type);
   // farklı kiracı tipleri karışık sırada
   const pool = ids.slice().sort(() => rng() - 0.5);
   const cards = [];
@@ -286,6 +294,13 @@ export function generateCards(s, house, rng = Math.random) {
   }
   house.cards = cards;
   return cards;
+}
+
+// Bu ev türüne bu seviyede gelebilecek kiracılar
+export function availableTenants(s, houseType) {
+  return Object.entries(TENANTS)
+    .filter(([, t]) => (t.unlock || 1) <= s.level && (!t.houses || t.houses.includes(houseType)))
+    .map(([id]) => id);
 }
 
 // Bir kartın bu evde şu anki değeri (kira, ücret, xp, talep durumu).
@@ -349,10 +364,11 @@ export function houseStatus(s, h) {
 export function payoutFor(s, h) {
   const c = h.contract;
   const bonus = demandMet(s, h, c.demand) ? CONFIG.demandMetRentBonus : 0;
-  return Math.round(c.rent * (1 + bonus));
+  const sets = (s.collectionSets || 0) * CONFIG.collectionSetBonus / 100;
+  return Math.round(c.rent * (1 + bonus) * (1 + sets));
 }
 
-export function collectRent(s, houseId) {
+export function collectRent(s, houseId, rng = Math.random) {
   const h = s.buildings[houseId];
   if (!h || !h.contract || s.gameTime < h.contract.end) return fail('Kira henüz hazır değil.');
   if (!isConnected(s, h)) return fail('Ev yola bağlı değil.');
@@ -363,6 +379,13 @@ export function collectRent(s, houseId) {
   s.stats.rentsCollected++;
   s.stats.moneyEarned += amount;
   addXp(s, c.xp);
+  // koleksiyon parçası düşebilir
+  if (rng() < CONFIG.collectionDropChance) {
+    const keys = Object.keys(COLLECTION);
+    const item = keys[Math.floor(rng() * keys.length) % keys.length];
+    s.collection[item]++;
+    emit(s, 'collectionDrop', { item, x: h.x, y: h.y });
+  }
   h.contract = null;
   if (sat > 0) {
     h.renewal = { tenant: c.tenant, minutes: c.minutes, demand: c.demand, waiveFee: sat >= CONFIG.satHappy };
@@ -372,6 +395,39 @@ export function collectRent(s, houseId) {
   }
   emit(s, 'collected', { id: h.id, x: h.x, y: h.y, amount, xp: c.xp });
   return ok({ amount, left: sat <= 0 });
+}
+
+// ---------- Elmas ----------
+
+export function rushCost(s, h) {
+  if (!h?.contract) return 0;
+  const hours = Math.max(0, h.contract.end - s.gameTime) / HOUR;
+  return Math.max(1, Math.ceil(hours)) * CONFIG.rushDiamondsPerHour;
+}
+
+// Kontratı elmasla hemen bitir (kira hemen toplanabilir olur)
+export function rushContract(s, houseId) {
+  const h = s.buildings[houseId];
+  if (!h?.contract || s.gameTime >= h.contract.end) return fail('Hızlandırılacak kontrat yok.');
+  const cost = rushCost(s, h);
+  if (s.diamonds < cost) return fail('Yeterli elmas yok.');
+  s.diamonds -= cost;
+  h.contract.end = s.gameTime;
+  return ok({ cost });
+}
+
+// ---------- Koleksiyon ----------
+
+export function canCompleteSet(s) {
+  return s.collectionSets < CONFIG.collectionSetMax && Object.keys(COLLECTION).every(k => s.collection[k] > 0);
+}
+
+export function completeSet(s) {
+  if (!canCompleteSet(s)) return fail('Set için her parçadan bir tane gerekli.');
+  for (const k of Object.keys(COLLECTION)) s.collection[k]--;
+  s.collectionSets++;
+  addXp(s, 20);
+  return ok({ sets: s.collectionSets });
 }
 
 export function declineRenewal(s, houseId) {
@@ -570,7 +626,8 @@ export function addXp(s, amount) {
     s.level++;
     const reward = CONFIG.levelUpMoneyPerLevel * s.level;
     s.money += reward;
-    emit(s, 'levelUp', { level: s.level, reward });
+    s.diamonds += CONFIG.diamondsPerLevel;
+    emit(s, 'levelUp', { level: s.level, reward, diamonds: CONFIG.diamondsPerLevel });
   }
 }
 
@@ -612,6 +669,7 @@ export function claimQuest(s) {
   const q = currentQuest(s);
   if (!q || !questComplete(s)) return fail('Görev henüz bitmedi.');
   s.money += q.reward.money || 0;
+  s.diamonds += q.reward.diamonds || 0;
   if (q.reward.xp) addXp(s, q.reward.xp);
   s.questIndex++;
   emit(s, 'quest', { reward: q.reward });

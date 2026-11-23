@@ -1,3 +1,11 @@
 {
-  "market": { "tolerans": 40 }
+  "market": {
+    "tolerans": 40
+  },
+  "koleksiyon-harita": {
+    "tolerans": 60
+  },
+  "koleksiyon-tapu": {
+    "tolerans": 60
+  }
 }

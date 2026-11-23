@@ -1,5 +1,5 @@
 // Oyunun ekranı: döngü, dokunma, menüler. Kurallar game.js'te, rakamlar data.js'te.
-import { CONFIG, BUILDINGS, TENANTS, CATEGORIES, QUESTS } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, CATEGORIES, QUESTS, COLLECTION } from './data.js';
 import * as G from './game.js';
 import { createRenderer, loadSprites } from './render.js';
 import { createAmbient } from './ambient.js';
@@ -102,7 +102,11 @@ function drainEvents(t) {
       AMB.burst(e.x, e.y, e.amount);
       buzz(12);
     } else if (e.type === 'levelUp') {
-      showLevelUp(e.level, e.reward);
+      showLevelUp(e.level, e.reward, e.diamonds);
+    } else if (e.type === 'collectionDrop') {
+      const it = COLLECTION[e.item];
+      view.floaters.push({ x: e.x, y: e.y, text: `+1 ${it.name}`, t0: t + 400, color: '#bde7ff' });
+      toast(`Koleksiyon parçası buldun: ${it.name}! (Menü → Koleksiyon)`);
     } else if (e.type === 'tenantLeft') {
       toast('Bir kiracı memnun kalmadığı için ayrıldı. Kirası yine de toplandı.', true);
     }
@@ -115,6 +119,12 @@ function buzz(ms) {
 
 // ---------- Üst gösterge ----------
 
+// Büyük sayılar üst göstergede kısa yazılır: 125.400 → 125 B, 2.300.000 → 2,3 Mn
+const compactFmt = new Intl.NumberFormat('tr-TR', { notation: 'compact', maximumFractionDigits: 1 });
+function compact(n) {
+  return n >= 100000 ? compactFmt.format(Math.round(n)) : G.formatMoney(n);
+}
+
 const hudCache = {};
 function setText(id, v) {
   if (hudCache[id] === v) return;
@@ -123,9 +133,10 @@ function setText(id, v) {
 }
 
 function updateHud() {
-  setText('money', G.formatMoney(s.money));
+  setText('money', compact(s.money));
+  setText('diamonds', String(s.diamonds));
   setText('level', String(s.level));
-  setText('worth', G.formatMoney(G.netWorth(s)));
+  setText('worth', compact(G.netWorth(s)));
   const pct = Math.min(100, (s.xp / G.xpToNext(s.level)) * 100);
   const w = `${pct.toFixed(1)}%`;
   if (hudCache.xp !== w) { hudCache.xp = w; $('xpfill').style.width = w; }
@@ -448,6 +459,12 @@ function onSheetClick(e) {
 
 // ---------- Metin yardımcıları ----------
 
+// Kiracı portresi; görsel yüklenemezse emoji kalır
+function portrait(tenantId, size = 46) {
+  const t = TENANTS[tenantId];
+  return `<span class="portrait" style="width:${size}px;height:${size}px;font-size:${Math.round(size * 0.56)}px">${t.icon}<img src="img/ui/kiraci-${tenantId}.png" alt="" onerror="this.remove()"></span>`;
+}
+
 function pct(v) {
   return `${v > 0 ? '+' : v < 0 ? '−' : '±'}%${Math.abs(v)}`;
 }
@@ -543,7 +560,7 @@ function openHouse(id) {
     sig: () => {
       const st = G.houseStatus(s, h);
       const met = h.contract ? G.demandMet(s, h, h.contract.demand) : '';
-      return `${st}|${h.x},${h.y}|${s.version}|${met}|${Math.floor(s.money / 50)}|${s.level}`;
+      return `${st}|${h.x},${h.y}|${s.version}|${met}|${Math.floor(s.money / 50)}|${s.level}|${s.diamonds}|${h.contract ? G.rushCost(s, h) : ''}`;
     },
     render: () => {
       const st = G.houseStatus(s, h);
@@ -565,7 +582,7 @@ function openHouse(id) {
         const c = h.contract;
         const t = TENANTS[c.tenant];
         const met = G.demandMet(s, h, c.demand);
-        html += `<div class="row"><span style="font-size:30px">${t.icon}</span><div class="grow">
+        html += `<div class="row">${portrait(c.tenant, 52)}<div class="grow">
             <div style="font-weight:800;font-size:16px">${t.name}</div>
             <div class="sub" style="margin:0">${G.formatMinutes(c.minutes)} kontrat</div></div>
             ${st === 'hazir' ? '<span class="chip coin">Kira hazır</span>' : `<span class="chip" data-live="left"></span>`}</div>
@@ -574,6 +591,9 @@ function openHouse(id) {
           <div class="meter"><span data-live="satbar" data-prop="width" style="width:0;background:${satColor(G.satisfaction(s, h))}"></span></div></div>
           <dl class="kv"><dt>Kira</dt><dd>${G.formatMoney(G.payoutFor(s, h))} 🪙${met ? ' <span class="chip good">+%15 memnun</span>' : ''}</dd>
           <dt>XP</dt><dd>${c.xp}</dd></dl>`;
+        if (st === 'kirada') {
+          html += `<button type="button" class="btn small" data-act="rush" ${s.diamonds < G.rushCost(s, h) ? 'disabled' : ''}>Hemen bitir · <span data-live="rush">${G.rushCost(s, h)}</span> elmas</button>`;
+        }
         if (st === 'hazir') {
           html += `<button type="button" class="btn coin" data-act="collect">Kirayı topla</button>
             <p class="sub" style="margin:0">Toplanmayan her saat memnuniyet ${CONFIG.satLatePerHour} puan düşer. Kira kaybolmaz.</p>`;
@@ -589,6 +609,7 @@ function openHouse(id) {
         left: `${G.formatDuration(h.contract.end - s.gameTime)} kaldı`,
         sat: String(sat),
         satbar: `${sat}%`,
+        rush: String(G.rushCost(s, h)),
       };
     },
     actions: {
@@ -598,6 +619,7 @@ function openHouse(id) {
       },
       decline: () => { G.declineRenewal(s, id); G.generateCards(s, h); panel.sigValue = ''; },
       collect: () => result(G.collectRent(s, id)),
+      rush: () => { if (result(G.rushContract(s, id), 'Kontrat bitti, kira hazır.')) save(); },
       move: () => startPlacement(h.type, id),
       sell: sellAction(id),
     },
@@ -612,7 +634,7 @@ function cardHtml(h, card, i) {
   const verb = i === 'renew' ? 'Yenile' : 'İmzala';
   const fee = q.fee ? `${verb} · ücret ${G.formatMoney(q.fee)}` : `${verb} · ücretsiz`;
   return `<div class="card">
-    <div class="face">${t.icon}</div>
+    <div class="face">${portrait(card.tenant, 46)}</div>
     <div class="t"><span>${t.name}</span><span class="dur">⏱ ${G.formatMinutes(card.minutes)}</span></div>
     <div class="nums"><span class="chip coin">${G.formatMoney(q.rent)} 🪙</span><span class="chip">saatte ${G.formatMoney(perHour)}</span>
       <span class="chip ${q.bonus.total > 0 ? 'good' : q.bonus.total < 0 ? 'bad' : ''}">konum ${pct(q.bonus.total)}</span><span class="chip">${q.xp} XP</span></div>
@@ -654,7 +676,7 @@ function openBuild() {
             ? `Saatte ~${G.formatMoney(d.rentPerHour)} kira (kiracıya göre)`
             : [d.incomePerHour ? `Saatte ${d.incomePerHour} gelir` : '', effectText(type)].filter(Boolean).join(' · ');
           html += `<button type="button" class="bitem ${locked ? 'locked' : ''} ${poor ? 'poor' : ''}" data-act="pick" data-type="${type}">
-            <span class="bi">${d.icon}</span><span class="bn">${d.name}</span>
+            <span class="bi">${d.icon}<img src="img/binalar/${type}.png" alt="" onerror="this.remove()"></span><span class="bn">${d.name}</span>
             <span class="bc">${locked ? `🔒 Seviye ${d.unlock}` : `${G.formatMoney(cost)} 🪙`}</span>
             <span class="be">${detail}</span></button>`;
         }
@@ -699,7 +721,7 @@ function openParcel(px, py) {
 function openMenu() {
   view.selectedId = null;
   openSheet({
-    sig: () => `${s.speed}|${AMB.enabled}`,
+    sig: () => `${s.speed}|${AMB.enabled}|${JSON.stringify(s.collection)}|${s.collectionSets}`,
     render: () => `<h2>Menü</h2>
       <div><h3>Şehirde hareket</h3>
         <div class="btns"><button type="button" class="btn ${AMB.enabled ? 'coin' : ''}" data-act="motion" data-v="1">Açık</button>
@@ -709,11 +731,17 @@ function openMenu() {
         <div class="btns">${CONFIG.speeds.map(v => `<button type="button" class="btn ${s.speed === v ? 'coin' : ''}" data-act="speed" data-v="${v}">×${v}</button>`).join('')}</div>
         <p class="sub" style="margin:6px 0 0">×60'ta 1 dakika = 1 saat. Kontratları hızlıca denemek için.</p></div>
       <div><h3>Nasıl oynanır</h3>${helpHtml()}</div>
+      <div><h3>Koleksiyon</h3>
+        <p class="sub" style="margin:2px 0 8px">Kira toplarken parça düşer. Her parçadan birer tane toplayınca seti tamamla: kiraya kalıcı +%${CONFIG.collectionSetBonus}.</p>
+        <div class="coll">${Object.entries(COLLECTION).map(([k, it]) => `<div class="coll-item ${s.collection[k] ? '' : 'empty'}"><img src="img/ui/${it.image}.png" alt=""><span>${it.name}</span><b>${s.collection[k]}</b></div>`).join('')}</div>
+        <div class="row" style="margin-top:8px"><span class="grow sub" style="margin:0">Tamamlanan set: <b>${s.collectionSets}</b> · kira bonusu +%${s.collectionSets * CONFIG.collectionSetBonus}</span>
+        <button type="button" class="btn coin small" data-act="set" ${G.canCompleteSet(s) ? '' : 'disabled'}>Seti tamamla</button></div></div>
       <div><h3>Oyun</h3><button type="button" class="btn danger" data-act="reset">Baştan başla</button></div>
       <p class="sub" style="margin:0">Prototip 0.1 · ilerleme bu cihazda saklanır.</p>`,
     actions: {
       speed: ds => { s.speed = Number(ds.v); toast(`Zaman hızı ×${ds.v}`); save(); },
       motion: ds => setMotion(ds.v === '1'),
+      set: () => { if (result(G.completeSet(s), `Set tamamlandı! Kira bonusu artık +%${s.collectionSets * CONFIG.collectionSetBonus}`)) { panel.sigValue = ''; save(); } },
       reset: (ds, el) => {
         if (el.dataset.armed !== '1') { el.dataset.armed = '1'; el.textContent = 'Her şey silinecek. Emin misin?'; return; }
         s = G.createState();
@@ -762,7 +790,7 @@ function showModal(html, actions) {
 }
 
 function showWelcome() {
-  showModal(`<h2 style="margin:0">Eski Çarşı'ya hoş geldin</h2>
+  showModal(`<div class="advisor"><img src="img/ui/danisman.png" alt="" onerror="this.remove()"><h2 style="margin:0">Eski Çarşı'ya hoş geldin</h2></div>
     <p>Küçük bir kasabada emlakçısın. Ev kur, kiracı yerleştir, kira topla ve şehri büyüt.</p>
     ${helpHtml()}
     <p class="sub" style="margin:0">Üstteki <b>Danışman</b> şeridi seni adım adım yönlendirir.</p>
@@ -788,11 +816,11 @@ function showAway(sum) {
   });
 }
 
-function showLevelUp(level, reward) {
+function showLevelUp(level, reward, diamonds = 0) {
   const unlocked = Object.values(BUILDINGS).filter(d => d.unlock === level);
   buzz(40);
   showModal(`<div class="big-num" style="color:var(--accent)">Seviye ${level}!</div>
-    <p>Ödül: <b>+${G.formatMoney(reward)} 🪙</b></p>
+    <p>Ödül: <b>+${G.formatMoney(reward)} 🪙</b>${diamonds ? ` ve <b>+${diamonds} elmas</b>` : ''}</p>
     ${unlocked.length ? `<p>Yeni bina: ${unlocked.map(d => `${d.icon} <b>${d.name}</b>`).join(', ')}</p>` : ''}
     <button type="button" class="btn primary" data-act="ok">Devam</button>`, {});
 }

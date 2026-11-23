@@ -116,3 +116,22 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 - Tepe: kuzeydoğu parselinde 4 kare. Üstüne bina yapılabilir; tepedeki eve +%10.
 - Zemin kareleri görselle çiziliyor; kilitli arsada koyulaştırılıyor; ağaçlar nehre çıkmıyor. 1 yeni test (toplam 18).
 - Beton, kum, deniz, kıyı kareleri hazır ama kullanılmıyor: Sanayi Bölgesi / İş Merkezi / Sahil mahalleleriyle gelecek.
+
+## 2026-11-23 — Görsel 18–37 (Claude üretti) ve yeni sistemler
+
+- Kullanıcı "geri kalanı sen hallet" dedi; kalan 20 görseli Claude Higgsfield'da Nano Banana ile üretti (20 kredi). Süslemelerde ev ve kafe referans görsel olarak verildi.
+- `tools/gorsel_hazirla.py --ikon`: simge ve portreler için (açı düzeltmesi yok, `img/ui/` altına). `--arkaplan-kalsin` uygulama ikonu için. Harita ve tapu ikonlarında tolerans 60 (`img/kaynak/ayarlar.json`).
+- Yeni: Süsleme kategorisi (6 süsleme, ucuz, küçük etki alanı). Çeşmede parıltı.
+- Yeni kiracılar: Sanatçı (seviye 4; kafe, atölye, heykel sever; AVM sevmez), Ünlü (seviye 9; yalnız villa ve rezidans; 3 kat kira; sanayi ve stadyum sevmez). Sanatçının "mahalle endeksini yükseltme" özelliği emlak piyasasıyla gelecek.
+- Kiracı portreleri: kartlarda, ev panelinde ve haritadaki balonlarda.
+- Elmas: başlangıç 5, her seviye +2. "Hemen bitir": kalan her saat için 1 elmas.
+- Koleksiyon: kira toplarken %12 şansla tapu/anahtar/harita düşer; üçü birden → set → kiraya kalıcı +%2 (en çok 10 set). Menü → Koleksiyon.
+- Danışman görseli görev şeridinde ve hoş geldin penceresinde. Uygulama ikonu sekme simgesi.
+- Üst gösterge dar ekrana sığdırıldı; büyük sayılar kısaltılıyor (992,2 B). İnşa menüsünde bina görselleri.
+- 4 yeni test (toplam 22).
+
+**Sırada (dokümandan kalanlar)**
+- Mahalleler: Sahil (kum/deniz/kıyı zeminleri hazır), Sanayi Bölgesi, İş Merkezi (beton hazır), Tepe Villaları.
+- Emlak piyasası: mahalle endeksi, al-sat, haftalık olaylar, sanatçı etkisi.
+- Kiracı hikayeleri, günlük hedefler, ses.
+- Sonra: denge ayarı (kullanıcı oynayınca), Android paketleme, sosyal özellikler.

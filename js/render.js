@@ -7,6 +7,7 @@ export const TH = 32; // kare yüksekliği
 
 const CAT_COLORS = {
   simge: { top: '#c9a227', left: '#f4ead0', right: '#dccfa8' },
+  dekor: { top: '#8fcf6a', left: '#e6f2dc', right: '#cfe3c0' },
   konut: { top: '#f29e4c', left: '#f6e7cf', right: '#e2cba8' },
   ticari: { top: '#3d8bd9', left: '#d9ecfb', right: '#b7d4ee' },
   kamu: { top: '#6fbf4a', left: '#e2f1d6', right: '#c8e0b5' },
@@ -32,6 +33,13 @@ export function loadSprites(onLoad = () => {}) {
     img.onload = () => { sprites[type] = img; onLoad(type); };
     img.onerror = () => {};
     img.src = `${SPRITE_DIR}${BUILDINGS[type].sprite || type}.png`;
+  }
+  // kiracı portreleri (haritadaki balonlar için)
+  for (const id of Object.keys(TENANTS)) {
+    const img = new Image();
+    img.onload = () => { sprites[`kiraci-${id}`] = img; };
+    img.onerror = () => {};
+    img.src = `img/ui/kiraci-${id}.png`;
   }
   // zemin kareleri (nehir, tepe ...)
   for (const ter of Object.values(TERRAIN)) {
@@ -343,6 +351,14 @@ export function createRenderer(canvas) {
     ctx.shadowBlur = 4;
     ctx.fill();
     ctx.shadowBlur = 0;
+    if (icon instanceof Image) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, r - 2.5, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.drawImage(icon, cx - r + 2.5, cy - r + 2.5, (r - 2.5) * 2, (r - 2.5) * 2);
+      ctx.restore();
+    }
     if (ring !== null) {
       ctx.beginPath();
       ctx.arc(cx, cy, r - 1.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ring);
@@ -353,7 +369,7 @@ export function createRenderer(canvas) {
     ctx.font = `${r * 1.1}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(icon, cx, cy + 1);
+    if (!(icon instanceof Image)) ctx.fillText(icon, cx, cy + 1);
   }
 
   function satColor(v) {
@@ -377,7 +393,7 @@ export function createRenderer(canvas) {
       } else if (st === 'kirada') {
         const c = b.contract;
         const p = (s.gameTime - c.start) / (c.end - c.start);
-        bubble(sx, top, TENANTS[c.tenant].icon, p, satColor(G.satisfaction(s, b)));
+        bubble(sx, top, sprites[`kiraci-${c.tenant}`] || TENANTS[c.tenant].icon, p, satColor(G.satisfaction(s, b)));
       } else if (st === 'yenileme') bubble(sx, top, '🔁', null, null, '#e6f6ff');
       else bubble(sx, top, '🔑', null, null, '#ffffff');
     } else if (G.hasIncome(b)) {

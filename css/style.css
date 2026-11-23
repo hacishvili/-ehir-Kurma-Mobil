@@ -46,7 +46,7 @@ button:focus-visible { outline: 3px solid var(--coin); outline-offset: 2px; }
   display: flex; flex-direction: column; gap: 8px; align-items: stretch;
   pointer-events: none;
 }
-.hud-row { display: flex; gap: 8px; align-items: center; }
+.hud-row { display: flex; gap: 6px; align-items: center; }
 .stat {
   pointer-events: auto;
   background: var(--ink); color: #fff;
@@ -57,6 +57,9 @@ button:focus-visible { outline: 3px solid var(--coin); outline-offset: 2px; }
   border: 0;
 }
 .money { font-size: 17px; }
+.stat .ico { width: 22px; height: 22px; object-fit: contain; }
+.gem { padding: 6px 10px; }
+.gem #diamonds { color: #9fd8ff; }
 .money #money { color: var(--coin); }
 .level { padding: 4px 10px 4px 4px; gap: 8px; }
 .level .lv {
@@ -79,6 +82,7 @@ button:focus-visible { outline: 3px solid var(--coin); outline-offset: 2px; }
   padding: 6px 12px 6px 6px; font-weight: 700; font-size: 13px; text-align: left;
   box-shadow: 0 3px 0 rgba(22,32,46,0.18);
 }
+#quest .q-face { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; object-position: top; background: #e7eefb; flex: none; }
 #quest .q-tag {
   background: var(--ink); color: var(--coin); border-radius: 8px;
   padding: 3px 7px; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
@@ -189,7 +193,16 @@ h3 { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin
   box-shadow: 0 0 0 1.5px var(--line), 0 3px 0 var(--line);
   display: grid; grid-template-columns: 46px 1fr; gap: 4px 12px; align-items: start;
 }
-.card .face { grid-row: span 3; width: 46px; height: 46px; border-radius: 14px; background: #eef4ea; display: grid; place-items: center; font-size: 26px; }
+.card .face { grid-row: span 3; width: 46px; height: 46px; display: grid; place-items: center; }
+.portrait { position: relative; display: inline-grid; place-items: center; border-radius: 50%; background: #eef4ea; flex: none; overflow: hidden; }
+.portrait img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.advisor { display: flex; align-items: flex-end; gap: 10px; }
+.advisor img { width: 84px; height: auto; margin: -36px 0 -4px -6px; }
+.coll { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.coll-item { background: #fff; border-radius: 12px; padding: 8px; display: grid; justify-items: center; gap: 2px; box-shadow: 0 0 0 1.5px var(--line); font-size: 12px; font-weight: 700; }
+.coll-item img { height: 46px; width: auto; }
+.coll-item b { font-size: 15px; }
+.coll-item.empty img { filter: grayscale(1) opacity(.4); }
 .card .t { font-weight: 800; font-size: 16px; display: flex; justify-content: space-between; gap: 8px; }
 .card .t .dur { color: var(--muted); font-weight: 700; font-size: 13px; white-space: nowrap; }
 .card .nums { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -203,9 +216,10 @@ h3 { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin
 .bitem {
   border: 0; text-align: left; background: #fff; border-radius: 14px; padding: 10px;
   box-shadow: 0 0 0 1.5px var(--line), 0 3px 0 var(--line);
-  display: grid; grid-template-columns: 34px 1fr; gap: 2px 8px; align-items: center;
+  display: grid; grid-template-columns: 40px 1fr; gap: 2px 8px; align-items: center;
 }
-.bitem .bi { font-size: 26px; grid-row: span 2; }
+.bitem .bi { font-size: 26px; grid-row: span 2; position: relative; width: 40px; height: 40px; display: grid; place-items: center; }
+.bitem .bi img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fff; }
 .bitem .bn { font-weight: 800; font-size: 14px; }
 .bitem .bc { font-size: 13px; font-weight: 800; color: #8a6400; font-variant-numeric: tabular-nums; }
 .bitem .be { grid-column: 1 / -1; font-size: 11.5px; color: var(--muted); line-height: 1.35; }
@@ -238,4 +252,18 @@ h3 { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin
 @media (prefers-reduced-motion: reduce) {
   #quest.done, #sheet { animation: none; }
   * { transition: none !important; }
+}
+
+/* Dar ekranda üst gösterge tek satıra sığsın */
+.worth { min-width: 0; flex: 0 1 auto; }
+.worth .lbl, .worth #worth { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+@media (max-width: 430px) {
+  .stat { padding: 5px 9px; }
+  .money { font-size: 15px; }
+  .level { padding: 3px 8px 3px 3px; gap: 6px; }
+  .level .lv { width: 26px; height: 26px; font-size: 15px; }
+  .xpbar { width: 36px; }
+  .worth { padding: 4px 9px; }
+  .worth .lbl { font-size: 9px; letter-spacing: .05em; }
+  .worth #worth { font-size: 13px; }
 }

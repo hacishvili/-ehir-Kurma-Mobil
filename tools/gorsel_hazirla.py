@@ -128,6 +128,9 @@ def main():
                     help='Kaynaktaki zemin baklavasının genişlik/yükseklik oranı (verilmezse ölçülür)')
     ap.add_argument('--tolerans', type=int, default=22, help='Arka plan rengine ne kadar benzeyen silinsin')
     ap.add_argument('--genislik', type=int, default=512)
+    ap.add_argument('--ikon', action='store_true',
+                    help='Simge/portre: açı düzeltmesi yok, img/ui/ altına kaydedilir (varsayılan 256 px)')
+    ap.add_argument('--arkaplan-kalsin', action='store_true', help='Arka planı silme (uygulama ikonu gibi)')
     args = ap.parse_args()
     # img/kaynak/ayarlar.json: bazı görsellerin kendine özel ayarı (örn. market için tolerans)
     import json
@@ -138,6 +141,19 @@ def main():
             args.tolerans = own['tolerans']
         if 'oran' in own and args.oran is None:
             args.oran = own['oran']
+
+    if args.ikon:
+        im = Image.open(args.kaynak).convert('RGBA')
+        if not args.arkaplan_kalsin:
+            im = remove_background(im, args.tolerans)
+            im = im.crop(im.getchannel('A').point(lambda v: 255 if v > 128 else 0).getbbox())
+        width = args.genislik if args.genislik != 512 else 256
+        out = im.resize((width, round(im.height * width / im.width)), Image.LANCZOS)
+        dest = ROOT / 'img' / 'ui' / f'{args.ad}.png'
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        out.save(dest, optimize=True)
+        print(f'Kaydedildi: {dest.relative_to(ROOT)} ({out.width}x{out.height})')
+        return
 
     im = remove_background(Image.open(args.kaynak), args.tolerans)
     bbox = im.getchannel('A').point(lambda v: 255 if v > 128 else 0).getbbox()

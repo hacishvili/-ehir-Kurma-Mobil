@@ -219,3 +219,52 @@ test('nehre bina ve yol yapılamaz; nehir kenarındaki ev ve tepedeki ev bonus a
   assert.ok(G.build(s, 'ev', 10, 1).ok, 'tepeye bina yapılabilir');
   assert.equal(G.bonusAt(s, 10, 1).total, 10, 'tepe bonusu');
 });
+
+test('sanatçı 4. seviyede, ünlü yalnız villa ve rezidansa gelir', () => {
+  const s = G.createState();
+  assert.ok(!G.availableTenants(s, 'ev').includes('sanatci'));
+  s.level = 10;
+  assert.ok(G.availableTenants(s, 'ev').includes('sanatci'));
+  assert.ok(!G.availableTenants(s, 'ev').includes('unlu'));
+  assert.ok(G.availableTenants(s, 'villa').includes('unlu'));
+});
+
+test('elmasla kontrat hemen biter', () => {
+  const s = rich();
+  const { id } = G.build(s, 'ev', AX + 1, 5);
+  const h = s.buildings[id];
+  h.cards = [{ tenant: 'emekli', minutes: 480, demand: null }];
+  G.signContract(s, id, 0);
+  s.diamonds = 10;
+  assert.equal(G.rushCost(s, h), 8);
+  assert.ok(G.rushContract(s, id).ok);
+  assert.equal(s.diamonds, 2);
+  assert.equal(G.houseStatus(s, h), 'hazir');
+});
+
+test('koleksiyon parçası düşer, set tamamlanınca kira artar', () => {
+  const s = rich();
+  const { id } = G.build(s, 'ev', AX + 1, 5);
+  const h = s.buildings[id];
+  h.cards = [{ tenant: 'genc', minutes: 60, demand: null }];
+  G.signContract(s, id, 0);
+  G.advance(s, 60 * G.MIN);
+  const base = G.payoutFor(s, h);
+  G.collectRent(s, id, () => 0); // şans: hep düşür, ilk parça
+  assert.equal(Object.values(s.collection).reduce((a, b) => a + b, 0), 1);
+  s.collection = { tapu: 1, anahtar: 1, harita: 1 };
+  assert.ok(G.completeSet(s).ok);
+  h.cards = [{ tenant: 'genc', minutes: 60, demand: null }];
+  h.renewal = null;
+  G.signContract(s, id, 0);
+  G.advance(s, 60 * G.MIN);
+  assert.ok(G.payoutFor(s, h) > base);
+});
+
+test('eski kayıt yeni alanlarla açılır', () => {
+  const s = G.createState();
+  delete s.diamonds; delete s.collection; delete s.collectionSets;
+  const t = G.deserialize(JSON.stringify(s));
+  assert.equal(t.diamonds, 5);
+  assert.equal(t.collection.tapu, 0);
+});

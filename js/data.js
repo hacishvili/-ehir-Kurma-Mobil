@@ -41,6 +41,16 @@ export const CONFIG = {
   levelUpMoneyPerLevel: 100,
 
   speeds: [1, 10, 60],   // test için zaman hızlandırma
+
+  // Elmas (premium): seviye atlayınca ve görevlerden gelir; kontratı hemen bitirmeye harcanır
+  diamondsPerLevel: 2,
+  startDiamonds: 5,
+  rushDiamondsPerHour: 1, // kalan her (başlamış) saat için 1 elmas
+
+  // Koleksiyon: kira toplarken düşen parçalar; set tamamlanınca kalıcı kira bonusu
+  collectionDropChance: 0.12,
+  collectionSetBonus: 2, // her tamamlanan set kiraya kalıcı +%2
+  collectionSetMax: 10,  // en fazla 10 set (+%20)
 };
 
 // cat: konut | ticari | kamu | sanayi | simge | yol
@@ -67,7 +77,7 @@ export const BUILDINGS = {
   kafe: {
     name: 'Kafe', cat: 'ticari', icon: '☕', cost: 400, unlock: 1,
     incomePerHour: 40, height: 16,
-    effect: { radius: 2, all: 5, tenants: { ogrenci: 10, genc: 5 } },
+    effect: { radius: 2, all: 5, tenants: { ogrenci: 10, genc: 5, sanatci: 8 } },
   },
   market: {
     name: 'Market', cat: 'ticari', icon: '🛒', cost: 700, unlock: 2,
@@ -100,7 +110,7 @@ export const BUILDINGS = {
     name: 'Atölye', cat: 'sanayi', icon: '🏭', cost: 800, unlock: 3,
     incomePerHour: 220, height: 28,
     smoke: { x: 0.234, y: -0.234, h: 35 }, // img/binalar/atolye.png'deki baca
-    effect: { radius: 2, all: -8, tenants: { aile: -10, emekli: -12, genc: -4 } },
+    effect: { radius: 2, all: -8, tenants: { aile: -10, emekli: -12, genc: -4, sanatci: 10, unlu: -10 } },
   },
 
   // ---- Sonradan eklenen binalar (rakamlar ilk tahmin) ----
@@ -116,7 +126,7 @@ export const BUILDINGS = {
   avm: {
     name: 'AVM', cat: 'ticari', icon: '🛍️', cost: 9000, unlock: 12, size: 2,
     incomePerHour: 950, height: 22,
-    effect: { radius: 3, all: 10, tenants: { genc: 8, aile: 6, ogrenci: 6 } },
+    effect: { radius: 3, all: 10, tenants: { genc: 8, aile: 6, ogrenci: 6, sanatci: -10 } },
   },
   lojistik: {
     name: 'Lojistik Depo', cat: 'sanayi', icon: '🚚', cost: 3500, unlock: 8,
@@ -137,17 +147,44 @@ export const BUILDINGS = {
   saatkulesi: {
     name: 'Saat Kulesi', cat: 'simge', icon: '🕰️', cost: 8000, unlock: 11,
     height: 60,
-    effect: { radius: 4, all: 10 },
+    effect: { radius: 4, all: 10, tenants: { unlu: 8 } },
   },
   stadyum: {
     name: 'Stadyum', cat: 'simge', icon: '🏟️', cost: 15000, unlock: 14, size: 2,
     height: 20,
-    effect: { radius: 5, all: 12, tenants: { genc: 6, ogrenci: 6, emekli: -6 } },
+    effect: { radius: 5, all: 12, tenants: { genc: 6, ogrenci: 6, emekli: -6, unlu: -10 } },
   },
+  // ---- Süslemeler: ucuz, küçük alana küçük bonus ----
+  'dekor-cicek': {
+    name: 'Çiçek Tarhı', cat: 'dekor', icon: '🌷', cost: 120, unlock: 1, height: 2,
+    effect: { radius: 1, all: 3, tenants: { aile: 2, emekli: 3 } },
+  },
+  'dekor-lamba': {
+    name: 'Bank ve Lamba', cat: 'dekor', icon: '💡', cost: 150, unlock: 2, height: 8,
+    effect: { radius: 1, all: 3, tenants: { genc: 2 } },
+  },
+  'dekor-cesme': {
+    name: 'Küçük Çeşme', cat: 'dekor', icon: '⛲', cost: 200, unlock: 2, height: 8,
+    sparkle: { h: 8, spread: 0.08 },
+    effect: { radius: 1, all: 4 },
+  },
+  'dekor-oyun': {
+    name: 'Oyun Parkı', cat: 'dekor', icon: '🛝', cost: 400, unlock: 3, height: 8,
+    effect: { radius: 1, all: 2, tenants: { aile: 10, emekli: -3 } },
+  },
+  'dekor-kamelya': {
+    name: 'Kamelya', cat: 'dekor', icon: '🛖', cost: 350, unlock: 4, height: 14,
+    effect: { radius: 1, all: 4, tenants: { emekli: 4 } },
+  },
+  'dekor-heykel': {
+    name: 'Heykel', cat: 'dekor', icon: '🐎', cost: 600, unlock: 6, height: 20,
+    effect: { radius: 2, all: 5, tenants: { sanatci: 6, unlu: 4 } },
+  },
+
   gokdelen: {
     name: 'Gökdelen', cat: 'simge', icon: '🗼', cost: 20000, unlock: 16,
     height: 80,
-    effect: { radius: 5, all: 15 },
+    effect: { radius: 5, all: 15, tenants: { unlu: 12 } },
   },
 };
 
@@ -170,9 +207,10 @@ export const CATEGORIES = {
   kamu: { name: 'Kamu ve yeşil', hint: 'Gelir yok, çevreye güçlü bonus' },
   sanayi: { name: 'Sanayi', hint: 'Yüksek gelir, çevreye olumsuz etki' },
   simge: { name: 'Simge yapı', hint: 'Pahalı ve nadir; çok geniş alana bonus' },
+  dekor: { name: 'Süsleme', hint: 'Ucuz; yakın evlere küçük bonus' },
 };
 
-// durations dakika cinsinden
+// durations dakika cinsinden. Portre görseli: img/ui/kiraci-<id>.png. unlock: hangi seviyede gelmeye başlar
 export const TENANTS = {
   ogrenci: {
     name: 'Öğrenci', icon: '🎒', durations: [5, 15, 30], rentMult: 0.6,
@@ -188,8 +226,23 @@ export const TENANTS = {
   },
   emekli: {
     name: 'Emekli', icon: '👴', durations: [480, 600, 720], rentMult: 1.0,
-    likes: ['park'], dislikes: ['gece', 'atolye'],
+    likes: ['park', 'hastane', 'dekor-kamelya'], dislikes: ['gece', 'atolye'],
   },
+  sanatci: {
+    name: 'Sanatçı', icon: '🎨', durations: [120, 240, 360], rentMult: 0.8, unlock: 4,
+    likes: ['kafe', 'atolye', 'dekor-heykel'], dislikes: ['avm'],
+  },
+  unlu: {
+    name: 'Ünlü', icon: '🌟', durations: [720, 1080, 1440], rentMult: 3.0, unlock: 9,
+    houses: ['villa', 'rezidans'], // yalnız bu evlere gelir
+    likes: ['gokdelen', 'saatkulesi', 'dekor-heykel'], dislikes: ['atolye', 'fabrika', 'lojistik', 'stadyum'],
+  },
+};
+
+export const COLLECTION = {
+  tapu: { name: 'Tapu', image: 'koleksiyon-tapu' },
+  anahtar: { name: 'Anahtar', image: 'koleksiyon-anahtar' },
+  harita: { name: 'Eski Harita', image: 'koleksiyon-harita' },
 };
 
 // Danışman görevleri: sırayla açılır, oyunu öğretir.
