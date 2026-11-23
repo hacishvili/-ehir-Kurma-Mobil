@@ -1,0 +1,8 @@
+{
+  "appId": "com.emlaksehri.oyun",
+  "appName": "Emlak Şehri",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#7cc6de"
+  }
+}

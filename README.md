@@ -57,3 +57,19 @@ Oyun kuralları (bağlantı, etki alanı, kira, memnuniyet, kayıt) tarayıcıs�
 | `img/binalar/` | Bina görselleri. Kurallar ve dosya adları `img/binalar/OKU.md` içinde. |
 | `tests/` | Kural testleri |
 | `DEVAM_NOTLARI.md` | Oturumlar arası notlar: ne yapıldı, sırada ne var |
+
+## Android paketi
+
+Oyun, Capacitor ile Android uygulamasına çevrilir. Ayrıntılar ve Google Play adımları: [`docs/Google-Play.md`](docs/Google-Play.md).
+
+```bash
+npm run android
+```
+
+Bu komut web dosyalarını `www/` klasörüne kopyalar ve Android projesine aktarır. Sonra:
+
+```bash
+cd android && ./gradlew bundleRelease
+```
+
+Gerekenler: Java 21, Android SDK (`android/local.properties` içinde `sdk.dir`), yayın imzası için `android/keystore.properties` (git'e girmez).

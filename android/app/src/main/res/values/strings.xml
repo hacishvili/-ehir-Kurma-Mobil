@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Emlak Şehri</string>
+    <string name="title_activity_main">Emlak Şehri</string>
+    <string name="package_name">com.emlaksehri.oyun</string>
+    <string name="custom_url_scheme">com.emlaksehri.oyun</string>
+</resources>

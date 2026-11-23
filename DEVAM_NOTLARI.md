@@ -171,3 +171,14 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 - Ses (`js/audio.js`): Web Audio ile üretilen efektler (para, inşaat, kontrat, seviye, ödül çanı, haber, hata, dokunma) ve sakin döngüsel müzik (C–Am–F–G, yumuşak akor + pentatonik melodi). İlk dokunuşta açılır; sekme arka plandayken susar. Menü → Ses: efektler ve müzik ayrı ayrı açılıp kapanır (cihaz ayarı).
 - Sesler test ortamında hatasız çalıştı ama kulakla dinlenmedi; kullanıcı telefonda dinleyip söyleyecek.
 - 1 yeni test (toplam 34).
+
+## 2026-11-23 — Android paketi ve Google Play hazırlığı
+
+- Oturum "Mobil-Game" ortamına geçirildi (kullanıcı onayıyla): dl.google.com, Maven ve Gradle erişimi var.
+- Capacitor 8.6.2 ile `android/` projesi. Paket adı `com.emlaksehri.oyun`, sürüm 0.1.0 (versionCode 1), hedef SDK 36, en düşük 24.
+- `scripts/web-paketle.mjs` → `www/` (img/kaynak pakete girmez). `npm run android` = paketle + cap sync.
+- `tools/android_ikon.py`: uygulama ikonundan Android ikonları (kare, yuvarlak, uyarlanabilir) ve açılış ekranı.
+- Maven 429 hatası: `org.gradle.parallel=false` ve `--max-workers=1` ile çözüldü.
+- Yükleme anahtarı (upload key) üretildi: `~/imza/emlak-sehri-yukleme.jks`, alias `yukleme`. Şifresi `android/keystore.properties` içinde; ikisi de git'e girmez. Kullanıcıya dosya olarak verildi; Play Uygulama İmzalama açık kalmalı.
+- Çıktılar: imzalı AAB (15,5 MB) ve APK. İmza `apksigner` ile doğrulandı. Gerçek cihazda henüz denenmedi.
+- `docs/Google-Play.md`: adım adım yükleme, mağaza metinleri, veri güvenliği ve içerik derecelendirme cevapları. `docs/gizlilik-politikasi.html`. `docs/play/`: 512 ikon, 1024×500 öne çıkan görsel, 4 telefon ekran görüntüsü (1080×1920).
