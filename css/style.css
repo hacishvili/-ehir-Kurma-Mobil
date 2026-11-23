@@ -108,7 +108,7 @@ button:focus-visible { outline: 3px solid var(--coin); outline-offset: 2px; }
 /* ---------- Alt menü ---------- */
 #dock {
   position: absolute; left: 0; right: 0; bottom: 0;
-  display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px;
   padding: 10px max(12px, var(--safe-r)) calc(var(--safe-b) + 10px) max(12px, var(--safe-l));
   background: linear-gradient(to top, rgba(22,32,46,0.55), rgba(22,32,46,0));
 }
@@ -299,3 +299,18 @@ h3 { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin
 .goal { background: #fff; border-radius: 14px; padding: 10px 12px; display: grid; gap: 6px; box-shadow: 0 0 0 1.5px var(--line), 0 3px 0 var(--line); }
 .goal.claimed { opacity: .7; }
 .goal .btn, .goal .chip { justify-self: start; }
+
+.dock-btn { font-size: 11px; padding: 7px 2px 8px; }
+.dock-btn span { font-size: 20px; }
+.road-types { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+.road-type { border: 0; cursor: pointer; padding: 6px 10px; font-size: 12.5px; }
+.road-type.on { background: var(--accent); color: #fff; }
+.road-type:disabled { opacity: .45; }
+.goods { display: grid; gap: 8px; }
+.good { display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 12px; padding: 8px 10px; box-shadow: 0 0 0 1.5px var(--line); flex-wrap: wrap; }
+.good .gi { font-size: 26px; }
+.good .gb { display: flex; gap: 6px; }
+.upg { background: #eef5ff; border-radius: 14px; padding: 10px 12px; }
+.achs { display: grid; gap: 4px; }
+.ach { display: flex; gap: 8px; align-items: center; font-size: 13.5px; padding: 6px 10px; border-radius: 10px; background: #fff; box-shadow: 0 0 0 1px var(--line); }
+.ach.done { background: #e9f6ee; }

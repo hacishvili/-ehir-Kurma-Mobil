@@ -1,5 +1,5 @@
 // İzometrik şehir çizimi (Canvas 2D). Oyun mantığını değiştirmez, yalnız okur.
-import { CONFIG, BUILDINGS, TENANTS, TERRAIN } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, TERRAIN, UPGRADES, VARIANTS, RESOURCES } from './data.js';
 import * as G from './game.js';
 
 export const TW = 64; // kare genişliği
@@ -7,6 +7,8 @@ export const TH = 32; // kare yüksekliği
 
 const CAT_COLORS = {
   simge: { top: '#c9a227', left: '#f4ead0', right: '#dccfa8' },
+  hammadde: { top: '#a8814f', left: '#efe2cc', right: '#d8c6a6' },
+  isleme: { top: '#8c6f5c', left: '#e6dbd2', right: '#cbbdb1' },
   dekor: { top: '#8fcf6a', left: '#e6f2dc', right: '#cfe3c0' },
   konut: { top: '#f29e4c', left: '#f6e7cf', right: '#e2cba8' },
   ticari: { top: '#3d8bd9', left: '#d9ecfb', right: '#b7d4ee' },
@@ -17,7 +19,7 @@ const CAT_COLORS = {
 const GROUND = {
   grassA: '#9fd16a', grassB: '#96ca61',
   locked: '#6f8f5c', lockedB: '#6a8857',
-  avenue: '#5d6470', road: '#868d99', roadOff: '#b07a74',
+  avenue: '#5d6470', road: '#868d99', roadOff: '#b07a74', cobble: '#a8988a',
   line: '#f4f1e4',
 };
 
@@ -27,12 +29,16 @@ export const SPRITE_DIR = 'img/binalar/';
 const sprites = {};
 
 export function loadSprites(onLoad = () => {}) {
-  for (const type of Object.keys(BUILDINGS)) {
-    if (type === 'yol') continue;
+  const names = new Set();
+  for (const type of Object.keys(BUILDINGS)) if (BUILDINGS[type].cat !== 'yol') names.add(type);
+  // yükseltme seviyeleri ve farklı görünümler
+  for (const [type, ups] of Object.entries(UPGRADES)) ups.forEach((_, i) => names.add(`${type}-${i + 2}`));
+  for (const list of Object.values(VARIANTS)) list.forEach(n => names.add(n));
+  for (const name of names) {
     const img = new Image();
-    img.onload = () => { sprites[type] = img; onLoad(type); };
+    img.onload = () => { sprites[name] = img; onLoad(name); };
     img.onerror = () => {};
-    img.src = `${SPRITE_DIR}${BUILDINGS[type].sprite || type}.png`;
+    img.src = `${SPRITE_DIR}${name}.png`;
   }
   // kiracı portreleri (haritadaki balonlar için)
   for (const id of Object.keys(TENANTS)) {
@@ -146,9 +152,10 @@ export function createRenderer(canvas) {
         const hood = G.activeHood();
         let terImg = ter ? sprites[TERRAIN[ter].sprite] : bridge ? sprites[TERRAIN.nehir.sprite] : null;
         // Sanayi ve İş Merkezi'nde açık arsalar beton
-        if (!terImg && hood.groundTile && unlocked && !G.isAvenue(x, y) && !(b && b.type === 'yol')) terImg = sprites[hood.groundTile] || null;
+        const road = b && G.isRoadType(b.type) ? b.type : null;
+        if (!terImg && hood.groundTile && unlocked && !G.isAvenue(x, y) && !road) terImg = sprites[hood.groundTile] || null;
         if (G.isAvenue(x, y)) fill = GROUND.avenue;
-        else if (b && b.type === 'yol') fill = G.isRoadConnected(s, x, y) ? GROUND.road : GROUND.roadOff;
+        else if (road) fill = !G.isRoadConnected(s, x, y) ? GROUND.roadOff : road === 'yol-tas' ? GROUND.cobble : GROUND.road;
         if (terImg) {
           drawTile(x, y, terImg);
           if (!unlocked) poly(d.pts, 'rgba(25,45,20,0.32)');
@@ -158,8 +165,11 @@ export function createRenderer(canvas) {
           // cadde nehrin üstünden köprüyle geçer
           const bd = diamond(x, y, 0.1);
           poly(bd.pts, GROUND.avenue, '#3c414a');
-        } else if (!terImg) {
+        } else if (road && ter === 'nehir') {
+          drawBridge(x, y, fill);
+        } else if (!terImg || road) {
           poly(d.pts, fill);
+          if (road) drawRoadStyle(x, y, road);
         }
         if (G.isAvenue(x, y)) {
           ctx.strokeStyle = GROUND.line;
@@ -177,6 +187,41 @@ export function createRenderer(canvas) {
         }
       }
     }
+  }
+
+  // Yol türlerinin süsü: Arnavut kaldırımı taş deseni, bulvarda kenar ağaçları
+  function drawRoadStyle(x, y, type) {
+    if (type === 'yol-tas') {
+      ctx.fillStyle = 'rgba(60,45,35,0.22)';
+      for (let i = 0; i < 9; i++) {
+        const fx = x + 0.18 + (i % 3) * 0.32, fy = y + 0.18 + Math.floor(i / 3) * 0.32;
+        const [px, py] = toScreen(fx, fy);
+        ctx.beginPath(); ctx.ellipse(px, py, 4 * cam.z, 2 * cam.z, 0, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (type === 'bulvar') {
+      // kenarlarda yeşil şerit ve küçük ağaçlar
+      for (const [fx, fy] of [[x + 0.12, y + 0.12], [x + 0.88, y + 0.88]]) {
+        const [px, py] = toScreen(fx, fy);
+        ctx.fillStyle = '#4f9a3c';
+        ctx.beginPath(); ctx.arc(px, py - 5 * cam.z, 5 * cam.z, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#6fbf4a';
+        ctx.beginPath(); ctx.arc(px - 1.5 * cam.z, py - 6.5 * cam.z, 3 * cam.z, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+
+  // Nehir üstündeki yol: taş köprü
+  function drawBridge(x, y, fill) {
+    const deck = diamond(x, y, 0.18);
+    const [a, b2, c, d] = deck.pts;
+    const h = 5 * cam.z;
+    poly([d, c, [c[0], c[1] + h], [d[0], d[1] + h]], '#8d7b68');
+    poly([c, b2, [b2[0], b2[1] + h], [c[0], c[1] + h]], '#76675a');
+    poly(deck.pts, fill === GROUND.roadOff ? fill : '#b9a58c', '#6a5a4c');
+    ctx.strokeStyle = '#5b4c40';
+    ctx.lineWidth = 2 * cam.z;
+    ctx.beginPath(); ctx.moveTo(a[0], a[1] - 3 * cam.z); ctx.lineTo(d[0], d[1] - 3 * cam.z); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(b2[0], b2[1] - 3 * cam.z); ctx.lineTo(c[0], c[1] - 3 * cam.z); ctx.stroke();
   }
 
   // Zemin karesi görselini karenin baklavasına oturt (alt köşe = karenin alt köşesi)
@@ -262,11 +307,16 @@ export function createRenderer(canvas) {
   }
 
   // Binanın karenin üst köşesinden ne kadar yükseğe çıktığı (balon ve etiketler için)
-  function buildingTop(type) {
-    const img = sprites[type];
+  function buildingTop(b) {
+    const type = typeof b === 'string' ? b : b.type;
+    const img = typeof b === 'string' ? sprites[type] : spriteOf(b);
     const n = G.sizeOf(type);
     if (img) return TW * cam.z * n * (BUILDINGS[type].spriteScale || 1) * img.naturalHeight / img.naturalWidth - TH * cam.z * n;
     return (BUILDINGS[type].height || 0) * cam.z;
+  }
+
+  function spriteOf(b) {
+    return sprites[G.spriteKey(b)] || sprites[b.type];
   }
 
   function drawSprite(b, img, alpha, selected, tint) {
@@ -288,7 +338,8 @@ export function createRenderer(canvas) {
 
   function drawBuilding(b, alpha = 1, selected = false, tint = null) {
     const d = BUILDINGS[b.type];
-    if (sprites[b.type]) return drawSprite(b, sprites[b.type], alpha, selected, tint);
+    const img = spriteOf(b);
+    if (img) return drawSprite(b, img, alpha, selected, tint);
     const col = CAT_COLORS[d.cat];
     const h = (d.height || 0) * cam.z;
     const n = G.sizeOf(b.type);
@@ -390,7 +441,7 @@ export function createRenderer(canvas) {
   function drawStatus(s, b, t) {
     const d = BUILDINGS[b.type];
     const [sx, sy] = toScreen(b.x, b.y);
-    const top = sy - buildingTop(b.type) - 4 * cam.z;
+    const top = sy - buildingTop(b) - 4 * cam.z;
     const pulse = 1 + Math.sin(t / 220) * 0.06;
     if (G.isHouse(b)) {
       const st = G.houseStatus(s, b);
@@ -415,10 +466,20 @@ export function createRenderer(canvas) {
       if (!G.isConnected(s, b)) bubble(sx, top, '⚠️', null, null, '#fff3cd');
       else if (G.isCollectable(s, b)) {
         ctx.save(); ctx.translate(sx, top); ctx.scale(pulse, pulse);
-        bubble(0, 0, '🪙', (b.stored || 0) / G.storageCap(b.type), '#f2b134', '#fff6d6');
+        bubble(0, 0, '🪙', (b.stored || 0) / G.storageCap(b), '#f2b134', '#fff6d6');
         ctx.restore();
       }
+    } else if (G.isProducer(b)) {
+      // üretim: çıktının simgesi ve döngü halkası; girdi yoksa ya da depo doluysa uyarı
+      const st = G.producerStatus(s, b);
+      const out = Object.keys(d.produce.outputs)[0];
+      if (st === 'baglantisiz') bubble(sx, top, '⚠️', null, null, '#fff3cd');
+      else if (st === 'girdi') bubble(sx, top, '❗', null, null, '#ffe2d6');
+      else if (st === 'dolu') bubble(sx, top, '📦', null, null, '#ffe2d6');
+      else bubble(sx, top, RESOURCES[out].icon, Math.min(1, (b.prog || 0) / G.cycleMs(b.type)), '#3d8bd9', '#eef5ff');
     }
+    // yükseltilmiş binanın seviyesi
+    if (b.level > 1) pill(sx + 18 * cam.z, sy + 4 * cam.z, '★'.repeat(b.level - 1), 'rgba(22,32,48,0.75)', '#ffd54a', 9);
   }
 
   function draw(s, view, t, amb = null) {
@@ -435,14 +496,14 @@ export function createRenderer(canvas) {
 
     const pl = view.placement;
     const sel = view.selectedId ? s.buildings[view.selectedId] : null;
-    if (pl && pl.type !== 'yol') drawInfluence(s, pl);
+    if (pl && !G.isRoadType(pl.type)) drawInfluence(s, pl);
     else if (sel) drawInfluence(s, sel);
 
     // binalar, ağaçlar, arabalar, insanlar: arkadan öne (karenin merkezine göre)
-    const list = Object.values(s.buildings).filter(b => b.type !== 'yol' && (!pl || b.id !== pl.moveId));
+    const list = Object.values(s.buildings).filter(b => !G.isRoadType(b.type) && (!pl || b.id !== pl.moveId));
     const keyOf = b => { const n = G.sizeOf(b.type); return { key: b.x + b.y + n, kx: b.x + n / 2 }; };
     const items = list.map(b => ({ b, ghost: false, ...keyOf(b) }));
-    if (pl && pl.type !== 'yol') {
+    if (pl && !G.isRoadType(pl.type)) {
       const g = { id: '_ghost', type: pl.type, x: pl.x, y: pl.y };
       items.push({ b: g, ghost: true, ...keyOf(g) });
     }
@@ -459,7 +520,7 @@ export function createRenderer(canvas) {
 
     if (!pl) for (const it of items) drawStatus(s, it.b, t);
 
-    if (pl && pl.type !== 'yol') drawPlacementPreview(s, pl);
+    if (pl && !G.isRoadType(pl.type)) drawPlacementPreview(s, pl);
 
     // yükselen yazılar
     for (const f of view.floaters) {
@@ -485,7 +546,7 @@ export function createRenderer(canvas) {
         const delta = after - (pl.moveId ? G.bonusAt(s, h.x, h.y, tenant).total : before);
         if (delta === 0) continue;
         const [sx, sy] = toScreen(h.x, h.y);
-        const top = sy - buildingTop(h.type) - 6 * cam.z;
+        const top = sy - buildingTop(h) - 6 * cam.z;
         pill(sx, top, `${delta > 0 ? '+' : ''}%${delta}`, delta > 0 ? '#1f8f55' : '#c43d3d', '#ffffff', 12);
       }
     }

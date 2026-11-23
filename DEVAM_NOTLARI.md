@@ -182,3 +182,26 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 - Yükleme anahtarı (upload key) üretildi: `~/imza/emlak-sehri-yukleme.jks`, alias `yukleme`. Şifresi `android/keystore.properties` içinde; ikisi de git'e girmez. Kullanıcıya dosya olarak verildi; Play Uygulama İmzalama açık kalmalı.
 - Çıktılar: imzalı AAB (15,5 MB) ve APK. İmza `apksigner` ile doğrulandı. Gerçek cihazda henüz denenmedi.
 - `docs/Google-Play.md`: adım adım yükleme, mağaza metinleri, veri güvenliği ve içerik derecelendirme cevapları. `docs/gizlilik-politikasi.html`. `docs/play/`: 512 ikon, 1024×500 öne çıkan görsel, 4 telefon ekran görüntüsü (1080×1920).
+
+## 2026-11-23 — Faz 1 çeşitlilik + Sanayi Baronu'nun sanayileşme sistemi
+
+Kullanıcı isteği: çeşitlilik az; seviyeyle değişen binalar, farklı yollar/köprüler/ağaçlar, elmasla alınan özel yapılar, daha çok bina, tekrar eden oynanış. Ek olarak `hacishvili/Mobil-Game` deposunun `claude/mobile-game-dev-j7t2fl` dalındaki **Sanayi Baronu** (Flutter) oyununun sanayileşme sistemi entegre edildi.
+
+**Görseller (Claude üretti, 42 kredi):** 10 yükseltme görünümü (ev/apartman/villa/kafe/market seviye 2-3), 4 farklı görünüm (ev-b, ev-c, apartman-b, apartman-c), 7 yeni bina (eczane, cami, hamam, spor, otel, çay bahçesi, kütüphane), 4 ağaç, 3 elmaslı özel yapı (Gökyüzü Kulesi, Dönme Dolap 2×2, Saray 2×2), 14 üretim binası. Eczane için tolerans 40.
+
+**Sanayileşme (`RESOURCES`, `INDUSTRY`, `MATS` — `js/data.js`; mantık `js/game.js`):**
+- 14 mal (Sanayi Baronu ile aynı zincir, fiyatlar bizim ekonomiye ölçeklendi): odun, kum, buğday, kömür, demir, petrol → kereste, un, çimento, cam, çelik, plastik → ekmek, mobilya.
+- Üretim binaları haritaya kurulur (`cat: 'hammadde' | 'isleme'`, `produce: {inputs, outputs, minutes}`). Yola bağlı olmalı; çoğu çevresine olumsuz etki. Sanayi Bölgesi'nde %25 hızlı. Önce hammadde sonra işleme sırasıyla işler; uzun aradan sonra en çok 8 saatlik üretim.
+- Depo: her maldan 100 adet (seviye başına ×2, büyütme 1500×3^seviye). Dolunca üretim durur; girdi yoksa fabrika bekler.
+- Mal pazarı: satınca fiyat düşer (baskı), ~3 oyun saatinde toparlanır; alış %10 pahalı (Sanayi Baronu market.dart mantığı).
+- Büyük binalar para + malzeme ister (`MATS`). Eksik malzeme tek dokunuşla pazardan alınabilir.
+
+**Yükseltme (`UPGRADES`):** ev, apartman, villa, kafe, market 3 seviye; seviye 2 kereste/çimento/cam, seviye 3 çelik/cam/mobilya (kafe/market ekmek de ister). Kira/gelir ×1,6–1,7 ve ×2,5–2,6. Görünüm `<tür>-<seviye>.png`. Haritada ★ işareti.
+**Görünümler (`VARIANTS`):** ev ve apartman kurulurken rastgele 3 görünümden biri.
+**Yollar:** Asfalt (bedava), Arnavut kaldırımı (20, sv3, küçük bonus), Ağaçlı bulvar (60, sv6). Nehrin üstüne yol = köprü.
+**Özel yapılar:** elmasla (`diamondCost`): kule 60, dönme dolap 40 (gelir de verir), saray 80.
+**Başarımlar (`ACHIEVEMENTS`):** 15 başarım, kendiliğinden verilir (elmas/para); Menü'de liste.
+**Ekran:** alt menüde 📦 Depo (6 düğme), fabrika panelinde üretim hızı/durum, yükseltme kartı, eksik malzeme penceresi, yol türü seçici, İnşa menüsünde Hammadde ve Sanayi Üretimi bölümleri.
+- 6 yeni test (toplam 40). Eski testlerde `rich()` artık depoyu doldurur; nehre yol testi köprü olarak güncellendi.
+
+**Kalan (faz 1'den):** ziyaretçiler (turist, müfettiş, gazeteci) yapılmadı. Faz 2: kalan binalar, yeni kiracılar, 20 hikaye, mevsimler.

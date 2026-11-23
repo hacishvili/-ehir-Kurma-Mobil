@@ -20,6 +20,8 @@ Prototipte olanlar:
 - **Bedava taşıma**, yerleştirirken canlı bonus önizlemesi
 - Sürükleyerek toplama, "sen yokken" özeti, danışman görevleri, seviye
 - Canlı şehir: yollarda arabalar, kaldırımda insanlar, sallanan ağaçlar, bacadan duman, su parıltısı, kira toplanınca saçılan paralar (Menü'den kapatılabilir)
+- Sanayileşme (Sanayi Baronu'ndan): hammadde ve fabrika binaları, depo, arz-talebe göre oynayan mal pazarı, malzemeyle inşaat
+- Bina yükseltme (3 seviye, her seviyede yeni görünüm), farklı ev/apartman görünümleri, yol türleri ve köprüler, elmasla alınan özel yapılar, başarımlar
 - Test için zaman hızlandırma (Menü → ×10 / ×60)
 - İlerleme telefonda saklanır (sunucu yok)
 

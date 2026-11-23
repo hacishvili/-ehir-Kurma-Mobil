@@ -1,5 +1,5 @@
 // Oyunun ekranı: döngü, dokunma, menüler. Kurallar game.js'te, rakamlar data.js'te.
-import { CONFIG, BUILDINGS, TENANTS, CATEGORIES, QUESTS, COLLECTION, HOODS, STORIES } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, CATEGORIES, QUESTS, COLLECTION, HOODS, STORIES, RESOURCES, ACHIEVEMENTS, INDUSTRY } from './data.js';
 import * as G from './game.js';
 import { createRenderer, loadSprites } from './render.js';
 import { createAmbient } from './ambient.js';
@@ -16,6 +16,7 @@ const view = { selectedId: null, placement: null, floaters: [] };
 let s = null;
 let mode = 'normal'; // normal | place | road
 let roadErase = false;
+let roadType = 'yol';
 let panel = null;
 let lastWall = Date.now();
 
@@ -116,6 +117,12 @@ function drainEvents(t) {
       buzz(12);
     } else if (e.type === 'levelUp') {
       showLevelUp(e.level, e.reward, e.diamonds);
+    } else if (e.type === 'achievement') {
+      A.play('chime');
+      toast(`🏆 Başarım: ${e.text}! ${e.reward.diamonds ? `+${e.reward.diamonds} elmas` : ''}${e.reward.money ? `+${G.formatMoney(e.reward.money)} 🪙` : ''}`);
+    } else if (e.type === 'upgraded') {
+      view.floaters.push({ x: e.x, y: e.y, text: `★ Seviye ${e.level}`, t0: t, color: '#ffd54a' });
+      AMB.burst(e.x, e.y, 400);
     } else if (e.type === 'storyStarted') {
       view.floaters.push({ x: e.x, y: e.y, text: '📜 yeni istek', t0: t + 600, color: '#ffd9a8' });
       toast(`📜 Bir kiracın istekte bulundu: ${e.title} Eve dokun.`);
@@ -313,7 +320,7 @@ function onTap(tx, ty) {
   if (!G.inBounds(tx, ty)) { deselect(); return; }
   if (!G.isUnlocked(s, tx, ty)) { const [px, py] = G.parcelOf(tx, ty); openParcel(px, py); return; }
   const b = G.buildingAt(s, tx, ty);
-  if (b && b.type === 'yol') { openRoad(b.id); return; }
+  if (b && G.isRoadType(b.type)) { openRoad(b.id); return; }
   if (b) { openBuilding(b.id); return; }
   if (G.isAvenue(tx, ty)) { toast('Ana cadde. Yollarını buna bağla.'); deselect(); return; }
   deselect();
@@ -330,11 +337,11 @@ function paintRoad(tx, ty, isFirst) {
   if (!G.inBounds(tx, ty)) return;
   const b = G.buildingAt(s, tx, ty);
   if (roadErase) {
-    if (b && b.type === 'yol') G.sell(s, b.id);
+    if (b && G.isRoadType(b.type)) G.sell(s, b.id);
     return;
   }
   if (b || G.isAvenue(tx, ty)) return;
-  const r = G.build(s, 'yol', tx, ty);
+  const r = G.build(s, roadType, tx, ty);
   if (!r.ok && isFirst) toast(r.msg, true);
 }
 
@@ -348,7 +355,16 @@ function setMode(m) {
 }
 
 function updateRoadBar() {
-  $('placeInfo').innerHTML = `<b>Yol yap</b><span>Parmağını sürükleyerek yol çiz. Yol bedava; binalar bağlı bir yola komşu olmalı.</span>`;
+  const types = Object.entries(BUILDINGS).filter(([, d]) => d.cat === 'yol');
+  const chips = types.map(([id, d]) => {
+    const locked = d.unlock > s.level;
+    return `<button type="button" class="chip road-type ${roadType === id ? 'on' : ''}" data-road="${id}" ${locked ? 'disabled' : ''}>${d.icon} ${d.name}${locked ? ` · Sv ${d.unlock}` : d.cost ? ` · ${d.cost}` : ' · bedava'}</button>`;
+  }).join('');
+  $('placeInfo').innerHTML = `<b>${roadErase ? 'Yol sil' : 'Yol yap'}</b><div class="road-types">${chips}</div>
+    <span>Parmağını sürükleyerek çiz. Binalar bağlı bir yola komşu olmalı. Nehrin üstüne yol köprü olur.</span>`;
+  for (const el of $('placeInfo').querySelectorAll('[data-road]')) {
+    el.onclick = () => { roadType = el.dataset.road; roadErase = false; updateRoadBar(); };
+  }
   $('placeCancel').textContent = roadErase ? 'Çizmeye dön' : 'Yol sil';
   $('placeOk').textContent = 'Bitti';
 }
@@ -430,6 +446,10 @@ function confirmPlacement() {
     openBuilding(id);
   } else {
     const r = G.build(s, pl.type, pl.x, pl.y);
+    if (!r.ok && r.missing) {
+      openMissing(G.matsFor(pl.type), () => confirmPlacement());
+      return;
+    }
     if (!result(r)) return;
     setMode('normal');
     openBuilding(r.id);
@@ -526,6 +546,113 @@ function demandChip(met, demand) {
   return `<span class="chip ${met ? 'good' : 'bad'}">${met ? '✓' : '✗'} ${G.demandText(demand)}</span>`;
 }
 
+// ---------- Sanayi yardımcıları ----------
+
+function resChip(res, n, have = null) {
+  const r = RESOURCES[res];
+  const ok = have === null || have >= n;
+  return `<span class="chip ${ok ? '' : 'bad'}">${r.icon} ${G.formatMoney(Math.ceil(n))} ${r.name}${have !== null ? ` (${G.formatMoney(have)})` : ''}</span>`;
+}
+
+function matsChips(mats) {
+  return Object.entries(mats).map(([k, n]) => resChip(k, n, s.inv[k] || 0)).join(' ');
+}
+
+function producerStateText(b) {
+  return { calisiyor: 'Çalışıyor', girdi: 'Girdi bekliyor: depoda yeterli mal yok', dolu: 'Depo dolu: malı sat ya da depoyu büyüt', baglantisiz: 'Yola bağlı değil' }[G.producerStatus(s, b)];
+}
+
+function producerBlock(b) {
+  const d = BUILDINGS[b.type];
+  const r = G.ratePerHour(b.type);
+  const ins = Object.entries(r.inputs).map(([k, n]) => resChip(k, n)).join(' ');
+  const outs = Object.entries(r.outputs).map(([k, n]) => resChip(k, n)).join(' ');
+  const st = G.producerStatus(s, b);
+  return `<div><h3>Üretim (saatte)</h3>
+    <div class="row">${ins ? ins + ' <b>→</b> ' : ''}${outs}</div>
+    <div class="meter" style="margin-top:8px"><span data-live="pmeter" data-prop="width" style="width:0;background:var(--accent)"></span></div>
+    <p class="sub" style="margin:6px 0 0;color:${st === 'calisiyor' ? 'var(--good)' : 'var(--bad)'}" data-live="pstate">${producerStateText(b)}</p>
+    <p class="sub" style="margin:4px 0 0">Depoda: ${[...new Set([...Object.keys(d.produce.inputs), ...Object.keys(d.produce.outputs)])].map(k => `${RESOURCES[k].icon} ${G.formatMoney(s.inv[k] || 0)}`).join(' · ')} / ${G.formatMoney(G.depoCapacity(s))}</p></div>
+    <button type="button" class="btn small" data-act="depo">📦 Depo ve pazar</button>`;
+}
+
+function upgradeBlock(b) {
+  const u = G.nextUpgrade(b);
+  if (!u && !(b.level > 1)) return '';
+  if (!u) return `<div><h3>Seviye ${b.level} ${'★'.repeat(b.level - 1)}</h3><p class="sub" style="margin:2px 0 0">En yüksek seviyede.</p></div>`;
+  const cost = G.upgradeCost(s, b);
+  return `<div class="upg"><h3>Yükselt: Seviye ${b.level || 1} → ${u.level}</h3>
+    <p class="sub" style="margin:2px 0 6px">Görünümü değişir, ${BUILDINGS[b.type].cat === 'konut' ? 'kirası' : 'geliri'} ×${u.mult} olur.</p>
+    <div class="row"><span class="chip coin">${G.formatMoney(cost)} 🪙</span> ${matsChips(u.mats)}</div>
+    <button type="button" class="btn primary" data-act="upgrade" style="margin-top:8px">Yükselt</button></div>`;
+}
+
+function doUpgrade(id) {
+  const b = s.buildings[id];
+  const r = G.upgrade(s, id);
+  if (!r.ok && r.missing) { openMissing(G.nextUpgrade(b).mats, () => { doUpgrade(id); }, () => openBuilding(id)); return; }
+  if (result(r, `Seviye ${r.level}! Bina büyüdü.`)) { A.play('levelUp'); save(); panel && (panel.sigValue = ''); }
+}
+
+// Eksik malzeme penceresi: pazardan alıp işi bitirir
+function openMissing(mats, onDone, onCancel = null) {
+  const miss = G.missingMats(s, mats);
+  const cost = G.missingCost(s, mats);
+  showModal(`<h2 style="margin:0">Eksik malzeme</h2>
+    <p>Bu iş için depoda şu mallar eksik:</p>
+    <div class="row">${Object.entries(miss).map(([k, n]) => resChip(k, n)).join(' ')}</div>
+    <p class="sub" style="margin:0">Kendin üretebilirsin (İnşa et → Hammadde / Sanayi Üretimi) ya da şimdi pazardan alabilirsin.</p>
+    <button type="button" class="btn coin" data-act="buy" ${s.money < cost ? 'disabled' : ''}>Pazardan al · ${G.formatMoney(cost)} 🪙</button>
+    <button type="button" class="btn ghost" data-act="cancel">Vazgeç</button>`, {
+    buy: () => { if (result(G.buyMissing(s, mats))) { A.play('coin'); onDone(); } },
+    cancel: () => { if (onCancel) onCancel(); },
+  });
+}
+
+// Depo ve mal pazarı
+function openDepo() {
+  view.selectedId = null;
+  openSheet({
+    sig: () => `${s.depoLevel}|${Math.floor(s.money / 50)}|${Object.values(s.inv).join()}|${Object.keys(RESOURCES).map(k => G.goodsSellPrice(s, k).toFixed(1)).join()}`,
+    render: () => {
+      const cap = G.depoCapacity(s);
+      let html = `<h2>📦 Depo ve pazar</h2>
+        <p class="sub">Her maldan en çok ${G.formatMoney(cap)} adet tutar. Çok satınca fiyat düşer, zamanla toparlanır. Alış satıştan %${Math.round((INDUSTRY.buySpread - 1) * 100)} pahalı.</p>
+        <div class="row"><span class="grow sub" style="margin:0">Depo seviyesi ${s.depoLevel + 1}</span>
+        <button type="button" class="btn small" data-act="depoUp" ${s.money < G.depoUpgradeCost(s) ? 'disabled' : ''}>Büyüt (×2) · ${G.formatMoney(G.depoUpgradeCost(s))} 🪙</button></div>
+        <div class="goods">`;
+      for (const tier of [0, 1, 2]) {
+        html += `<h3>${['Hammaddeler', 'İşlenmiş mallar', 'Son ürünler'][tier]}</h3>`;
+        for (const [k, r] of Object.entries(RESOURCES).filter(([, r]) => r.tier === tier)) {
+          const have = s.inv[k] || 0;
+          const f = G.goodsFactor(s, k);
+          const trend = f < 0.97 ? `<span class="chip bad">▼ %${Math.round((1 - f) * 100)}</span>` : f > 1.03 ? `<span class="chip good">▲ %${Math.round((f - 1) * 100)}</span>` : '';
+          html += `<div class="good">
+            <span class="gi">${r.icon}</span>
+            <div class="grow"><b>${r.name}</b> <span class="sub" style="margin:0">${G.formatMoney(have)}/${G.formatMoney(cap)}</span>
+              <div class="sub" style="margin:0">Satış ${G.goodsSellPrice(s, k).toFixed(1)} · Alış ${G.goodsBuyPrice(s, k).toFixed(1)} ${trend}</div></div>
+            <div class="gb"><button type="button" class="btn small" data-act="sell" data-r="${k}" data-n="10" ${have < 1 ? 'disabled' : ''}>Sat 10</button>
+            <button type="button" class="btn small coin" data-act="sell" data-r="${k}" data-n="all" ${have < 1 ? 'disabled' : ''}>Hepsi</button>
+            <button type="button" class="btn small" data-act="buy" data-r="${k}">Al 10</button></div></div>`;
+        }
+      }
+      return html + '</div>';
+    },
+    actions: {
+      depoUp: () => { if (result(G.upgradeDepo(s), `Depo büyüdü: her maldan ${G.depoCapacity(s)} adet.`)) save(); },
+      sell: ds => {
+        const n = ds.n === 'all' ? s.inv[ds.r] : Math.min(10, s.inv[ds.r]);
+        const r = G.sellGoods(s, ds.r, n);
+        if (result(r, `${r.qty} ${RESOURCES[ds.r].name} satıldı: +${G.formatMoney(r.total)} 🪙`)) { A.play('coin'); save(); }
+      },
+      buy: ds => {
+        const r = G.buyGoods(s, ds.r, 10);
+        if (result(r, `10 ${RESOURCES[ds.r].name} alındı: -${G.formatMoney(r.total)} 🪙`)) save();
+      },
+    },
+  });
+}
+
 // Kiracının özel isteği
 function storyCard(h) {
   const st = G.storyOf(s, h);
@@ -588,30 +715,37 @@ function openBuilding(id) {
 
   openSheet({
     valid: () => !!s.buildings[id],
-    sig: () => `${G.isConnected(s, b)}|${b.x},${b.y}|${G.isCollectable(s, b)}`,
+    sig: () => `${G.isConnected(s, b)}|${b.x},${b.y}|${G.isCollectable(s, b)}|${b.level}|${Math.floor(s.money / 100)}|${G.isProducer(b) ? G.producerStatus(s, b) : ''}`,
     render: () => {
       const conn = G.isConnected(s, b);
       const cat = CATEGORIES[d.cat];
       let html = `<h2>${d.icon} ${d.name}</h2><p class="sub">${cat.name} · ${cat.hint}</p>`;
       if (!conn) html += `<p class="chip bad">⚠️ Yola bağlı değil. Gelir üretmez.</p>`;
       if (d.effect) html += `<div><h3>Etki alanı</h3><p style="margin:2px 0 0">${effectText(b.type)}</p></div>`;
+      if (G.isProducer(b)) html += producerBlock(b);
       if (G.hasIncome(b)) {
-        const cap = G.storageCap(b.type);
+        const cap = G.storageCap(b);
         html += `<div><h3>Gelir</h3>
-          <dl class="kv"><dt>Saatte</dt><dd>${G.formatMoney(d.incomePerHour)} 🪙</dd>
+          <dl class="kv"><dt>Saatte</dt><dd>${G.formatMoney(G.incomeOf(b))} 🪙</dd>
           <dt>Biriken</dt><dd><span data-live="stored"></span> / ${G.formatMoney(cap)}</dd></dl>
           <div class="meter" style="margin-top:6px"><span data-live="meter" data-prop="width" style="background:var(--coin);width:0"></span></div></div>
           <button type="button" class="btn coin" data-act="collect">Topla</button>`;
       }
+      html += upgradeBlock(b);
       html += valueLine(b);
       html += `<div class="btns"><button type="button" class="btn" data-act="move">Taşı (bedava)</button>${sellButton(b)}</div>`;
       return html;
     },
-    live: () => G.hasIncome(b) ? {
-      stored: G.formatMoney(Math.floor(b.stored || 0)),
-      meter: `${Math.min(100, (b.stored || 0) / G.storageCap(b.type) * 100)}%`,
-    } : {},
+    live: () => ({
+      ...(G.hasIncome(b) ? {
+        stored: G.formatMoney(Math.floor(b.stored || 0)),
+        meter: `${Math.min(100, (b.stored || 0) / G.storageCap(b) * 100)}%`,
+      } : {}),
+      ...(G.isProducer(b) ? { pmeter: `${Math.min(100, (b.prog || 0) / G.cycleMs(b.type) * 100)}%`, pstate: producerStateText(b) } : {}),
+    }),
     actions: {
+      upgrade: () => doUpgrade(id),
+      depo: () => openDepo(),
       collect: () => result(G.collectIncome(s, id)),
       move: () => startPlacement(b.type, id),
       sell: sellAction(id),
@@ -629,7 +763,7 @@ function openHouse(id) {
     sig: () => {
       const st = G.houseStatus(s, h);
       const met = h.contract ? G.demandMet(s, h, h.contract.demand) : '';
-      return `${st}|${h.x},${h.y}|${s.version}|${met}|${Math.floor(s.money / 50)}|${s.level}|${s.diamonds}|${h.contract ? G.rushCost(s, h) : ''}|${h.story?.id}|${G.storyMet(s, h)}`;
+      return `${st}|${h.level}|${h.x},${h.y}|${s.version}|${met}|${Math.floor(s.money / 50)}|${s.level}|${s.diamonds}|${h.contract ? G.rushCost(s, h) : ''}|${h.story?.id}|${G.storyMet(s, h)}`;
     },
     render: () => {
       const st = G.houseStatus(s, h);
@@ -669,6 +803,7 @@ function openHouse(id) {
         }
       }
       html += storyCard(h);
+      html += upgradeBlock(h);
       html += valueLine(h);
       html += `<div class="btns"><button type="button" class="btn" data-act="move">Taşı (bedava)</button>${sellButton(h)}</div>`;
       return html;
@@ -692,6 +827,7 @@ function openHouse(id) {
       decline: () => { G.declineRenewal(s, id); G.generateCards(s, h); panel.sigValue = ''; },
       collect: () => result(G.collectRent(s, id)),
       rush: () => { if (result(G.rushContract(s, id), 'Kontrat bitti, kira hazır.')) save(); },
+      upgrade: () => doUpgrade(id),
       story: () => { if (result(G.completeStory(s, id))) { panel.sigValue = ''; save(); } },
       move: () => startPlacement(h.type, id),
       sell: sellAction(id),
@@ -723,7 +859,7 @@ function openRoad(id) {
     render: () => {
       const b = s.buildings[id];
       const ok = G.isRoadConnected(s, b.x, b.y);
-      return `<h2>🛣️ Yol</h2><p class="sub">${ok ? 'Ana caddeye bağlı.' : 'Ana caddeye bağlı değil: kırmızı yollar işe yaramaz.'}</p>
+      return `<h2>${BUILDINGS[b.type].icon} ${BUILDINGS[b.type].name}${G.terrainAt(b.x, b.y) === 'nehir' ? ' (köprü)' : ''}</h2><p class="sub">${ok ? 'Ana caddeye bağlı.' : 'Ana caddeye bağlı değil: kırmızı yollar işe yaramaz.'}</p>
         <button type="button" class="btn danger" data-act="remove">Yolu kaldır</button>`;
     },
     actions: { remove: () => { G.sell(s, id); deselect(); save(); } },
@@ -740,18 +876,26 @@ function openBuild() {
       let html = `<h2>İnşa et · ${G.activeHood().name}</h2><p class="sub">Fiyatlar mahalle endeksine göre: %${Math.round(G.marketIndex(s))}. Endeks düşükken inşa et, yükselince değerlensin.</p>`;
       for (const [cat, info] of Object.entries(CATEGORIES)) {
         const items = Object.entries(BUILDINGS).filter(([, d]) => d.cat === cat);
+        if (!items.length) continue;
         html += `<div class="cat-title"><h3>${info.name}</h3><small>${info.hint}</small></div><div class="blist">`;
         for (const [type, d] of items) {
           const rareLocked = d.rare && !s.rareUnlocked.includes(type);
           const locked = d.unlock > s.level || rareLocked;
           const cost = G.buildCost(s, type);
           const poor = cost > s.money;
+          const prodText = d.produce ? (() => {
+            const p = d.produce;
+            const ins = Object.entries(p.inputs).map(([k, n]) => `${n} ${RESOURCES[k].icon}`).join(' + ');
+            const outs = Object.entries(p.outputs).map(([k, n]) => `${n} ${RESOURCES[k].icon} ${RESOURCES[k].name}`).join(', ');
+            return `${p.minutes} dk: ${ins ? ins + ' → ' : ''}${outs}`;
+          })() : '';
+          const matsText = Object.keys(G.matsFor(type)).length ? 'Malzeme: ' + Object.entries(G.matsFor(type)).map(([k, n]) => `${n} ${RESOURCES[k].icon}`).join(' ') : '';
           const detail = d.cat === 'konut'
-            ? `Saatte ~${G.formatMoney(d.rentPerHour)} kira (kiracıya göre)`
-            : [d.incomePerHour ? `Saatte ${d.incomePerHour} gelir` : '', effectText(type)].filter(Boolean).join(' · ');
+            ? [`Saatte ~${G.formatMoney(d.rentPerHour)} kira (kiracıya göre)`, matsText].filter(Boolean).join(' · ')
+            : [prodText, d.incomePerHour ? `Saatte ${d.incomePerHour} gelir` : '', matsText, effectText(type)].filter(Boolean).join(' · ');
           html += `<button type="button" class="bitem ${locked ? 'locked' : ''} ${poor ? 'poor' : ''}" data-act="pick" data-type="${type}">
             <span class="bi">${d.icon}<img src="img/binalar/${type}.png" alt="" onerror="this.remove()"></span><span class="bn">${d.name}</span>
-            <span class="bc">${rareLocked ? '📜 Hikayeyle açılır' : locked ? `🔒 Seviye ${d.unlock}` : `${G.formatMoney(cost)} 🪙`}</span>
+            <span class="bc">${rareLocked ? '📜 Hikayeyle açılır' : locked ? `🔒 Seviye ${d.unlock}` : d.diamondCost ? `💎 ${d.diamondCost} elmas` : `${G.formatMoney(cost)} 🪙`}</span>
             <span class="be">${detail}</span></button>`;
         }
         html += '</div>';
@@ -764,6 +908,7 @@ function openBuild() {
         if (d.rare && !s.rareUnlocked.includes(ds.type)) return toast(`${d.name} nadir bir süsleme: memnun bir kiracının isteğini yerine getirince açılır.`, true);
         if (d.unlock > s.level) return toast(`${d.name} seviye ${d.unlock}'te açılır.`, true);
         if (G.buildCost(s, ds.type) > s.money) return toast('Yeterli para yok.', true);
+        if (d.diamondCost && s.diamonds < d.diamondCost) return toast(`${d.name} için ${d.diamondCost} elmas gerekli.`, true);
         startPlacement(ds.type);
       },
     },
@@ -894,7 +1039,7 @@ function goHood(id) {
 function openMenu() {
   view.selectedId = null;
   openSheet({
-    sig: () => `${s.speed}|${AMB.enabled}|${prefs.sfx}|${prefs.music}|${JSON.stringify(s.collection)}|${s.collectionSets}`,
+    sig: () => `${s.speed}|${AMB.enabled}|${prefs.sfx}|${prefs.music}|${s.achieved.length}|${JSON.stringify(s.collection)}|${s.collectionSets}`,
     render: () => `<h2>Menü</h2>
       <div><h3>Ses</h3>
         <div class="btns"><button type="button" class="btn ${prefs.sfx ? 'coin' : ''}" data-act="sfx">Efektler: ${prefs.sfx ? 'açık' : 'kapalı'}</button>
@@ -907,6 +1052,13 @@ function openMenu() {
         <div class="btns">${CONFIG.speeds.map(v => `<button type="button" class="btn ${s.speed === v ? 'coin' : ''}" data-act="speed" data-v="${v}">×${v}</button>`).join('')}</div>
         <p class="sub" style="margin:6px 0 0">×60'ta 1 dakika = 1 saat. Kontratları hızlıca denemek için.</p></div>
       <div><h3>Nasıl oynanır</h3>${helpHtml()}</div>
+      <div><h3>🏆 Başarımlar (${s.achieved.length}/${ACHIEVEMENTS.length})</h3>
+        <div class="achs">${ACHIEVEMENTS.map(a => {
+          const done = s.achieved.includes(a.id);
+          const p = Math.min(a.n, G.achievementProgress(s, a));
+          const rw = a.reward.diamonds ? `${a.reward.diamonds} elmas` : `${G.formatMoney(a.reward.money)} 🪙`;
+          return `<div class="ach ${done ? 'done' : ''}"><span>${done ? '✓' : '○'}</span><span class="grow">${a.text}</span><span class="sub" style="margin:0">${done ? rw : a.kind === 'netWorth' ? rw : `${G.formatMoney(p)}/${G.formatMoney(a.n)}`}</span></div>`;
+        }).join('')}</div></div>
       <div><h3>Koleksiyon</h3>
         <p class="sub" style="margin:2px 0 8px">Kira toplarken parça düşer. Her parçadan birer tane toplayınca seti tamamla: kiraya kalıcı +%${CONFIG.collectionSetBonus}.</p>
         <div class="coll">${Object.entries(COLLECTION).map(([k, it]) => `<div class="coll-item ${s.collection[k] ? '' : 'empty'}"><img src="img/ui/${it.image}.png" alt=""><span>${it.name}</span><b>${s.collection[k]}</b></div>`).join('')}</div>
@@ -1041,6 +1193,7 @@ function bindUi() {
   });
   $('btnMenu').addEventListener('click', () => { if (mode === 'road') setMode('normal'); openMenu(); });
   $('btnHood').addEventListener('click', () => { if (mode === 'road') setMode('normal'); openHoods(); });
+  $('btnDepo').addEventListener('click', () => { if (mode === 'road') setMode('normal'); openDepo(); });
   $('levelBtn').addEventListener('click', openLevel);
   $('placeOk').addEventListener('click', confirmPlacement);
   $('placeCancel').addEventListener('click', cancelPlacement);
