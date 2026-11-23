@@ -531,14 +531,64 @@ export function createRenderer(canvas) {
   function avenueKind() { return sprites['yol-cadde-5'] ? 'cadde' : 'yol'; }
 
   // Nehirdeki kare (onRiver): kuzeye ya da güneye bağlıysa köprü görseli
-  function roadSprite(s, x, y, type, onRiver = false) {
-    if (type !== 'cadde' && !ROAD_IMAGE_TYPES.includes(type)) return null;
+  // Karenin yol bağlantıları: K=1, D=2, G=4, B=8
+  function roadMask(s, x, y) {
     const isRoad = (nx, ny) => {
       if (!G.inBounds(nx, ny)) return outsideAvenue(nx, ny);
       if (G.isAvenue(nx, ny)) return true;
       return G.roadLink(s, x, y, nx, ny); // döner kavşağa yalnız kol ucundan bağlanır
     };
-    const m = (isRoad(x, y - 1) ? 1 : 0) | (isRoad(x + 1, y) ? 2 : 0) | (isRoad(x, y + 1) ? 4 : 0) | (isRoad(x - 1, y) ? 8 : 0);
+    return (isRoad(x, y - 1) ? 1 : 0) | (isRoad(x + 1, y) ? 2 : 0) | (isRoad(x, y + 1) ? 4 : 0) | (isRoad(x - 1, y) ? 8 : 0);
+  }
+
+  // Ağaçlı bulvarın kenarındaki ayakta duran ağaçlar. Görseldeki ağaçlar kuşbakışı ve çok küçük
+  // kalıyordu; bulvarın yeşil şeritlerine (kare kenarından 0,235 içeride) gerçek ağaç dikilir.
+  const LANE = 0.235;
+  function boulevardTreeSpots(m) {
+    const pts = [];
+    const curve = { 3: [0, 1, 0, -1], 6: [1, 1, -1, -1], 12: [1, 0, -1, 1], 9: [0, 0, 1, 1] }[m];
+    if (curve) {
+      // dönemeç: dış yayın ortasına bir ağaç (yayın merkezi iki bağlı kenarın köşesi)
+      const [cx, cy, sx, sy] = curve, r = 1 - LANE;
+      for (const a of [Math.PI / 4]) pts.push([cx + sx * r * Math.cos(a), cy + sy * r * Math.sin(a)]);
+      return pts;
+    }
+    // bağlı olmayan her kenarın ortasına bir ağaç
+    // (yol ucundaki kapalı kenara ağaç konmaz: yanındakilerle üst üste biniyordu)
+    const ew = m === 0 || (m & 10), ns = m === 0 || (m & 5);
+    if (!(m & 1) && ew) pts.push([0.5, LANE]);
+    if (!(m & 4) && ew) pts.push([0.5, 1 - LANE]);
+    if (!(m & 8) && ns) pts.push([LANE, 0.5]);
+    if (!(m & 2) && ns) pts.push([1 - LANE, 0.5]);
+    return pts;
+  }
+  function boulevardTrees(s, t, sway) {
+    const out = [];
+    const alt = SEASON_TREES[G.season()]?.yaprakli;
+    const img = sprites[`doga-${alt || 'yaprakli'}`] || sprites['doga-yaprakli'];
+    if (!img) return out;
+    const v = visibleTiles(2);
+    for (const b of Object.values(s.buildings)) {
+      if (b.type !== 'bulvar' || b.x < v.x0 || b.x > v.x1 || b.y < v.y0 || b.y > v.y1) continue;
+      if (G.terrainAt(b.x, b.y) === 'nehir') continue; // köprüde ağaç yok
+      const m = roadMask(s, b.x, b.y);
+      boulevardTreeSpots(m).forEach(([u, w], k) => {
+        const fx = b.x + u, fy = b.y + w;
+        const [sx, sy] = toScreen(fx, fy);
+        const size = 0.27 + hash(b.x, b.y, 30 + k) * 0.05;
+        const tw = NATURE.yaprakli.w * TW * cam.z * size;
+        const th = tw * img.naturalHeight / img.naturalWidth;
+        if (sx + tw < 0 || sx - tw > W || sy - th > H || sy < -10) return;
+        const phase = hash(b.x, b.y, 40 + k) * 6.28;
+        out.push({ key: fx + fy, kx: fx, draw: () => drawNature(img, 'yaprakli', sx, sy, tw, th, sway ? Math.sin(t / 1100 + phase) * 0.035 : 0) });
+      });
+    }
+    return out;
+  }
+
+  function roadSprite(s, x, y, type, onRiver = false) {
+    if (type !== 'cadde' && !ROAD_IMAGE_TYPES.includes(type)) return null;
+    const m = roadMask(s, x, y);
     const off = !G.isAvenue(x, y) && G.inBounds(x, y) && !G.isRoadConnected(s, x, y);
     // köprü hep kuzey-güney düz; yanındaki yollar köprüye bağlanmaz (nehir boyunca giden yolda kodla çizilen köprü)
     if (onRiver) return m & 5 ? sprites[`yol-${type}-kopru${off ? '-off' : ''}`] || null : null;
@@ -1041,7 +1091,7 @@ export function createRenderer(canvas) {
       const g = { id: '_ghost', type: pl.type, x: pl.x, y: pl.y };
       items.push({ b: g, ghost: true, ...keyOf(g) });
     }
-    const all = (amb ? items.concat(amb.drawables(s, t)) : items).concat(nature.inside);
+    const all = (amb ? items.concat(amb.drawables(s, t)) : items).concat(nature.inside, boulevardTrees(s, t, !!(amb && amb.enabled)));
     all.sort((a, b) => a.key - b.key || a.kx - b.kx);
     for (const it of all) {
       if (it.draw) it.draw();

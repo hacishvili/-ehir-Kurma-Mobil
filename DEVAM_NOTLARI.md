@@ -278,3 +278,4 @@ Görseller (Claude, ~50 kredi): kaynaklar `img/kaynak/`, doğa ve mevsim ağaçl
   çim parsel başına tek baklava; ekran çözünürlüğü en çok 2x. DPR 1'de kare ortancası 33 → 16,7 ms.
 - Sahil: kum ve kıyı kare görselleri yerine render.js drawShore — kum dokusu (kodla), dalgalı tek kıyı çizgisi
   (shoreLine), ıslak kum, sığ su ve köpük. Kare kare görsel testere dişi gibi görünüyordu. Kumdaki yollar da görselle.
+- Ağaçlı bulvar: görseldeki kuşbakışı ağaçlar görünmüyordu; render.js boulevardTrees bulvarın yeşil şeridine (kenardan 0,235) kare başına kenar ortasına ayakta ağaç diker (yaprakli, mevsime göre). Dönemeçte dış yay ortası, yol ucunun kapalı kenarında ağaç yok, köprüde yok.
