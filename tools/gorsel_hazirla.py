@@ -8,9 +8,9 @@ Yaptıkları:
    arka plan rengine benzeyen pikselleri siler; binanın içindeki koyu yerlere dokunmaz.
    Görsel zaten şeffafsa bu adım atlanır.
 2. Boş kenarları kırpar.
-3. Açıyı oyunun karelerine uydurur. Yapay zekâ çoğu zaman "gerçek izometrik"
-   çizer (zemin baklavası genişliğinin yüksekliğine oranı ~1,73); oyunun kareleri 2:1.
-   Görsel dikeyde biraz basılarak baklava 2:1'e getirilir.
+3. Açıyı oyunun karelerine uydurur. Yapay zekâ çoğu zaman oyunun karelerinden
+   daha dik açıdan çizer (zemin baklavası oranı ~1,6-1,75; oyunun kareleri 2:1).
+   Oran görselden ölçülür ve görsel dikeyde basılarak baklava 2:1'e getirilir.
 4. 512 piksel genişliğe küçültüp img/binalar/<ad>.png olarak kaydeder.
 
 Gerekenler: Python 3 ve Pillow (pip install pillow).
@@ -64,20 +64,36 @@ def remove_background(im, tolerance):
 
 
 def measure(im):
-    """Zemin baklavasının sol köşesinin ve alt ucunun yüksekliğini bulur."""
+    """Zemin baklavasının oranını (genişlik/yükseklik) ölçer.
+
+    Görselin alt kenarı, zeminin sol-alt ve sağ-alt kenarlarıdır; ağaç ya da çit
+    bunları bozmaz. Bu iki kenarın eğimi baklavanın oranını verir.
+    """
     a = im.getchannel('A').load()
     w, h = im.size
-    left_y = next(y for y in range(h) if a[1, y] > 128)
-    bottom_y = max(y for y in range(h) if a[w // 2, y] > 128)
-    return left_y, bottom_y
 
+    def bottom(x):
+        return max((y for y in range(h) if a[x, y] > 128), default=None)
+
+    slopes = []
+    for lo, hi in ((0.12, 0.40), (0.60, 0.88)):
+        xs = [round(w * (lo + (hi - lo) * i / 20)) for i in range(21)]
+        pts = [(x, bottom(x)) for x in xs if bottom(x) is not None]
+        n = len(pts)
+        mx = sum(p[0] for p in pts) / n
+        my = sum(p[1] for p in pts) / n
+        sxy = sum((p[0] - mx) * (p[1] - my) for p in pts)
+        sxx = sum((p[0] - mx) ** 2 for p in pts)
+        slopes.append(abs(sxy / sxx))
+    slope = sum(slopes) / 2
+    return 1 / slope if slope else math.sqrt(3), slopes
 
 def main():
     ap = argparse.ArgumentParser(description='Bina görselini oyuna hazırlar.')
     ap.add_argument('kaynak', help='Üretilen görsel (png, webp, jpg)')
     ap.add_argument('ad', help='Bina türü, örnek: ev, kafe, atolye')
-    ap.add_argument('--oran', type=float, default=math.sqrt(3),
-                    help='Kaynaktaki zemin baklavasının genişlik/yükseklik oranı (varsayılan 1,73)')
+    ap.add_argument('--oran', type=float, default=None,
+                    help='Kaynaktaki zemin baklavasının genişlik/yükseklik oranı (verilmezse ölçülür)')
     ap.add_argument('--tolerans', type=int, default=22, help='Arka plan rengine ne kadar benzeyen silinsin')
     ap.add_argument('--genislik', type=int, default=512)
     args = ap.parse_args()
@@ -85,11 +101,16 @@ def main():
     im = remove_background(Image.open(args.kaynak), args.tolerans)
     bbox = im.getchannel('A').point(lambda v: 255 if v > 128 else 0).getbbox()
     im = im.crop(bbox)
-    left_y, bottom_y = measure(im)
+    measured, slopes = measure(im)
     w, h = im.size
-    print(f'Kırpılmış boyut {w}x{h}; zemin sol köşesi y={left_y}, alt uç y={bottom_y}')
-
-    squash = args.oran / 2.0
+    ratio = args.oran or measured
+    print(f'Kırpılmış boyut {w}x{h}; zemin kenar eğimleri {slopes[0]:.3f} / {slopes[1]:.3f}, '
+          f'ölçülen oran {measured:.2f}')
+    if abs(slopes[0] - slopes[1]) > 0.06:
+        print('Uyarı: sol ve sağ kenar eğimi farklı; görsel tam izometrik olmayabilir.')
+    if not 1.4 <= ratio <= 2.2:
+        print('Uyarı: oran beklenmedik; görseli kontrol et ya da --oran ver.')
+    squash = ratio / 2.0
     new_w = args.genislik
     new_h = round(h * (new_w / w) * squash)
     out = im.resize((new_w, new_h), Image.LANCZOS)

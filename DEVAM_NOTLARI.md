@@ -66,3 +66,9 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 - `tools/gorsel_hazirla.py` yazıldı: siyah arka planı siler, kırpar, gerçek izometrik açıyı (1,73) oyunun 2:1 karesine uydurur (dikeyde %13 basma), 512 px'e küçültür.
 - Oyunda denendi (telefon boyutu): bahçe kareyi dolduruyor, balonlar evin üstünde.
 - Bu ev, diğer binalar üretilirken örnek görsel olarak verilecek.
+
+## 2026-11-23 — Kafe ve Park görselleri
+
+- Kullanıcı kafe ve parkı üretti (kaynaklar `img/kaynak/`). Hazırlanıp oyuna kondu.
+- `tools/gorsel_hazirla.py` artık açı oranını zeminin alt kenar eğiminden ölçüyor (ağaç ve çitten etkilenmiyor). Ölçülen oranlar: ev 1,83, park 1,73, kafe 1,85. Üç görsel yeniden işlendi.
+- Park, ev ve kafeden biraz daha çizgi filmsi (kalın siyah dış çizgi). Küçük boyutta göze batmıyor; diğer binalarda ev ve kafe örnek gösterilmeli.
