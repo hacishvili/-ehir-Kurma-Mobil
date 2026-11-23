@@ -61,8 +61,9 @@ function save() {
 
 // ---------- Başlangıç ----------
 
+// Açılışta haritanın tamamı ekrana sığar (uzaklaşma sınırı da bu)
 function startZoom() {
-  return Math.min(1.6, Math.max(0.8, R.size.W / (64 * 4.6)));
+  return R.fitZoom();
 }
 
 function start(hotData = {}) {
@@ -352,6 +353,7 @@ function setMode(m) {
   $('dock').hidden = m !== 'normal';
   $('placebar').hidden = m === 'normal';
   if (m !== 'place') view.placement = null;
+  view.grid = m !== 'normal';
   if (m === 'road') { closeSheet(); view.selectedId = null; updateRoadBar(); }
 }
 

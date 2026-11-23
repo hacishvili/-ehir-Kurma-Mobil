@@ -208,3 +208,12 @@ Kullanıcı isteği: çeşitlilik az; seviyeyle değişen binalar, farklı yolla
 
 ## 2026-11-23 — Test modu
 Menü → 🧪 Test modu: açıkken para 1 milyar, elmas 99.999, her mal en az 1000 adet tutulur (depo en az 8. seviye). Seviye 10/20/30 düğmeleri seviyeyi doğrudan ayarlar (`G.testSetLevel`). Kapatınca normal ekonomi döner; kazanılan para kalır. Sürüm 0.2.1 (kod 3).
+
+## 2026-11-23 — Doğal zemin, haritanın çevresi, ağaç görselleri
+Kullanıcı: harita ekran boyunda olsun, kaydırınca mavi arka plan görünmesin, zemin ve ağaçlar daha doğal olsun.
+- Görseller (Claude, 10 kredi): `img/doga/` — zemin dokuları `cim.jpg` (açık arsa) ve `yabani.jpg` (kilitli arsa ve harita dışı çayır); tek başına ağaçlar: meşe, köknar, kavak, yapraklı ağaç, iki çam, çalı, kaya, çiçek. Kaynaklar `img/kaynak/doga/`, işleme `tools/doga_hazirla.py` (dokuyu dikişsiz yapar ve büyük lekeleri düzler; ağaçların gölgesini siler, gölgeyi oyun çizer).
+- `js/render.js`: gökyüzü yok; ekran yabani çayır dokusuyla dolar (doku izometrik zemine yatırılmış desen). Açık arsalar tek parça çim dokusu (kare çizgisi yok). Izgara yalnız inşa ederken/yol yaparken (`view.grid`). Harita dışında 12 karelik kuşakta kenardan uzaklaştıkça sıklaşan orman; deniz, nehir, kum ve ana cadde haritanın dışına uzanır. Deniz kodla üretilen tek parça dokuyla çizilir (kare kare şeritlenmiyordu).
+- Ağaçlar artık görsel (kodla çizilen yuvarlak ağaçlar `ambient.js`ten kaldırıldı). Kilitli arsadaki ağaçlar rüzgârda sallanır (hareket açıksa).
+- Hız: harita dışı sabit olduğu için ekrandan biraz büyük ara belleğe bir kez çizilir, kaydırırken yalnız kopyalanır; yakınlaşma bitince ya da kenara gelince yeniden çizilir. Telefon boyutunda 60 kare/sn (ara bellek olmadan 17'ydi).
+- Yakınlık: açılışta harita ekrana sığar; bundan daha fazla uzaklaşılamaz (`fitZoom`). Kaydırma haritanın taştığı kadar + biraz pay.
+- Sürüm 0.2.2 (sürüm kodu 4).

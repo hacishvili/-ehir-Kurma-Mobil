@@ -5,3 +5,4 @@ www/
 *.jks
 android/keystore.properties
 cikti/
+__pycache__/

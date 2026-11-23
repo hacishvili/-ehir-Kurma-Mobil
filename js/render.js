@@ -23,6 +23,29 @@ const GROUND = {
   line: '#f4f1e4',
 };
 
+// Harita çevresindeki doğa: img/doga/. w = kare genişliğine göre görsel genişliği,
+// sway = rüzgârda sallanma payı, weight = ormanda görülme sıklığı
+export const NATURE = {
+  kuknar: { w: 0.62, sway: 0.5, weight: 26 },
+  yaprakli: { w: 0.74, sway: 1, weight: 20 },
+  mese: { w: 1.05, sway: 0.8, weight: 14 },
+  camlar: { w: 0.86, sway: 0.5, weight: 12 },
+  kavak: { w: 0.24, sway: 1.3, weight: 8 },
+  cali: { w: 0.58, sway: 0, weight: 11 },
+  kaya: { w: 0.5, sway: 0, weight: 5 },
+  cicekler: { w: 0.48, sway: 0, weight: 6 },
+};
+const NATURE_TOTAL = Object.values(NATURE).reduce((a, n) => a + n.weight, 0);
+const WATER_EDGE = new Set(['deniz', 'kiyi', 'nehir', 'kum']); // harita dışına da uzanan zeminler
+const RING = 12; // harita dışında ağaç dikilen kuşak (kare)
+
+// Aynı karede hep aynı sonucu veren karıştırıcı (ağaçların yeri için)
+function hash(x, y, k = 0) {
+  let h = (x * 374761393 + y * 668265263 + k * 2147483647) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
 // Bina görselleri: img/binalar/<tür>.png varsa kutu yerine o çizilir, yoksa kutu kalır.
 // Kurallar için img/binalar/OKU.md dosyasına bak.
 export const SPRITE_DIR = 'img/binalar/';
@@ -54,10 +77,48 @@ export function loadSprites(onLoad = () => {}) {
     img.onerror = () => {};
     img.src = `${SPRITE_DIR}${ter.sprite}.png`;
   }
+  // doğa: zemin dokuları ve ağaçlar
+  for (const tex of ['cim', 'yabani']) {
+    const img = new Image();
+    img.onload = () => { sprites[`doku-${tex}`] = img; };
+    img.src = `img/doga/${tex}.jpg`;
+  }
+  for (const name of Object.keys(NATURE)) {
+    const img = new Image();
+    img.onload = () => { sprites[`doga-${name}`] = img; };
+    img.src = `img/doga/${name}.png`;
+  }
+  sprites['doku-deniz'] = seaTexture();
   // mahalle zemini (beton)
   const beton = new Image();
   beton.onload = () => { sprites['zemin-beton'] = beton; };
   beton.src = `${SPRITE_DIR}zemin-beton.png`;
+}
+
+// Deniz dokusu (kodla): turkuaz zemin üstünde açık dalga çizgileri, dikişsiz tekrar eder
+function seaTexture() {
+  const S = 256;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#3fa3a6';
+  c.fillRect(0, 0, S, S);
+  for (let i = 0; i < 70; i++) {
+    const x = hash(i, 1) * S, y = hash(i, 2) * S, r = 6 + hash(i, 3) * 26;
+    c.fillStyle = hash(i, 4) < 0.5 ? 'rgba(20,90,110,0.10)' : 'rgba(120,215,205,0.10)';
+    for (const [ox, oy] of [[0, 0], [S, 0], [-S, 0], [0, S], [0, -S]]) {
+      c.beginPath(); c.arc(x + ox, y + oy, r, 0, Math.PI * 2); c.fill();
+    }
+  }
+  c.strokeStyle = 'rgba(225,250,245,0.45)';
+  c.lineWidth = 2;
+  for (let i = 0; i < 26; i++) {
+    const x = hash(i, 5) * S, y = hash(i, 6) * S, w = 10 + hash(i, 7) * 18;
+    for (const [ox, oy] of [[0, 0], [S, 0], [-S, 0], [0, S], [0, -S]]) {
+      c.beginPath(); c.moveTo(x + ox - w / 2, y + oy); c.quadraticCurveTo(x + ox, y + oy - 4, x + ox + w / 2, y + oy); c.stroke();
+    }
+  }
+  return cv;
 }
 
 export function hasSprite(type) {
@@ -65,7 +126,8 @@ export function hasSprite(type) {
 }
 
 export function createRenderer(canvas) {
-  const ctx = canvas.getContext('2d');
+  const mainCtx = canvas.getContext('2d');
+  let ctx = mainCtx; // harita dışı ara belleğe çizilirken geçici olarak değişir
   const cam = { x: 0, y: 0, z: 1 };
   let dpr = 1, W = 0, H = 0;
 
@@ -98,25 +160,33 @@ export function createRenderer(canvas) {
     cam.y = H * 0.45 - iy;
   }
 
+  // Haritanın tamamının ekrana sığdığı yakınlık: daha fazla uzaklaşılmaz
+  function fitZoom() {
+    const n = CONFIG.gridSize;
+    return G.clamp(Math.min(W / (n * TW), H / (n * TH)), 0.3, 2);
+  }
+
   function zoomAt(sx, sy, factor) {
-    const nz = G.clamp(cam.z * factor, 0.45, 2.6);
+    const nz = G.clamp(cam.z * factor, fitZoom(), 2.6);
     const f = nz / cam.z;
     cam.x = sx - (sx - cam.x) * f;
     cam.y = sy - (sy - cam.y) * f;
     cam.z = nz;
+    pan(0, 0);
   }
 
   function pan(dx, dy) {
     cam.x += dx;
     cam.y += dy;
-    // haritayı ekrandan tamamen kaçırmayı önle
+    // harita ekrandan kaçmasın: ortası, haritanın taşan kısmı kadar (biraz da pay) kayabilir
     const n = CONFIG.gridSize;
     const [cx, cy] = toScreen(n / 2, n / 2);
-    const lim = n * TW * cam.z * 0.5;
-    if (cx < W / 2 - lim) cam.x += W / 2 - lim - cx;
-    if (cx > W / 2 + lim) cam.x -= cx - (W / 2 + lim);
-    if (cy < H / 2 - lim * 0.6) cam.y += H / 2 - lim * 0.6 - cy;
-    if (cy > H / 2 + lim * 0.6) cam.y -= cy - (H / 2 + lim * 0.6);
+    const lx = Math.max(0, n * TW * cam.z / 2 - W / 2) + W * 0.12;
+    const ly = Math.max(0, n * TH * cam.z / 2 - H / 2) + H * 0.12;
+    if (cx < W / 2 - lx) cam.x += W / 2 - lx - cx;
+    if (cx > W / 2 + lx) cam.x -= cx - (W / 2 + lx);
+    if (cy < H / 2 - ly) cam.y += H / 2 - ly - cy;
+    if (cy > H / 2 + ly) cam.y -= cy - (H / 2 + ly);
   }
 
   // Bir karenin (ya da n×n alanın) baklavası
@@ -138,22 +208,143 @@ export function createRenderer(canvas) {
     if (stroke) { ctx.strokeStyle = stroke; ctx.stroke(); }
   }
 
+  // Doku deseni: kare görsel izometrik zemine yatırılır, k kare boyunca bir kez tekrar eder
+  const patterns = new Map();
+  function texture(name, k) {
+    const img = sprites[`doku-${name}`];
+    if (!img) return null;
+    const pk = ctx === mainCtx ? name : `${name}-off`;
+    let p = patterns.get(pk);
+    if (!p) { p = ctx.createPattern(img, 'repeat'); patterns.set(pk, p); }
+    const sc = k / (img.naturalWidth || img.width);
+    const a = sc * (TW / 2) * cam.z, b = sc * (TH / 2) * cam.z;
+    p.setTransform(new DOMMatrix([a, b, -a, b, cam.x, cam.y]));
+    return p;
+  }
+
+  // Ekranda görünen karelerin sınırı (biraz payla)
+  function visibleTiles(margin = 3) {
+    const pts = [screenToTile(0, 0), screenToTile(W, 0), screenToTile(0, H), screenToTile(W, H)];
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    return { x0: Math.min(...xs) - margin, x1: Math.max(...xs) + margin, y0: Math.min(...ys) - margin, y1: Math.max(...ys) + margin };
+  }
+
+  // Harita dışındaki kare: deniz/nehir/kum kenardan dışarı devam eder, ana cadde ufka uzanır
+  function outsideTerrain(x, y) {
+    const n = CONFIG.gridSize;
+    const ter = G.terrainAt(G.clamp(x, 0, n - 1), G.clamp(y, 0, n - 1));
+    return WATER_EDGE.has(ter) ? ter : null;
+  }
+  function outsideAvenue(x, y) {
+    const n = CONFIG.gridSize, av = G.activeHood().avenue;
+    return x === av.x && ((y < 0 && av.y0 === 0) || (y >= n && av.y1 === n - 1));
+  }
+
+  // Harita dışı: yabani çayır, uzanan su ve cadde
+  function drawOutside() {
+    const n = CONFIG.gridSize;
+    const wild = texture('yabani', 2.6);
+    ctx.fillStyle = wild || '#5d8a3c';
+    ctx.fillRect(0, 0, W, H);
+    // geniş açık-koyu lekeler: çayır tek düze görünmesin
+    const v = visibleTiles(4);
+    for (let y = Math.floor(v.y0 / 4) * 4; y <= v.y1; y += 4) {
+      for (let x = Math.floor(v.x0 / 4) * 4; x <= v.x1; x += 4) {
+        const h = hash(x, y, 77);
+        if (h > 0.55) continue;
+        const [sx, sy] = toScreen(x + 2 + hash(x, y, 78) * 2, y + 2 + hash(x, y, 79) * 2);
+        const r = (40 + hash(x, y, 80) * 70) * cam.z;
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+        g.addColorStop(0, h < 0.3 ? 'rgba(255,240,150,0.14)' : 'rgba(20,50,15,0.16)');
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.save();
+        ctx.translate(sx, sy); ctx.scale(1.6, 0.8);
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    }
+    seaFill((x, y) => !G.inBounds(x, y) && outsideTerrain(x, y) === 'deniz', v);
+    for (let y = v.y0; y <= v.y1; y++) {
+      for (let x = v.x0; x <= v.x1; x++) {
+        if (G.inBounds(x, y)) continue;
+        const ter = outsideTerrain(x, y);
+        if (ter && ter !== 'deniz' && sprites[TERRAIN[ter].sprite]) drawTile(x, y, sprites[TERRAIN[ter].sprite]);
+        if (outsideAvenue(x, y)) {
+          const d = diamond(x, y);
+          poly(d.pts, GROUND.avenue);
+          avenueLine(d);
+        }
+      }
+    }
+    // haritanın kenarında hafif gölge: şehir alanı çayırdan ayrılsın
+    const e = [diamond(0, 0).pts[0], diamond(n - 1, 0).pts[1], diamond(n - 1, n - 1).pts[2], diamond(0, n - 1).pts[3]];
+    ctx.lineWidth = 6 * cam.z;
+    poly(e, null, 'rgba(30,50,20,0.18)');
+    ctx.lineWidth = 1;
+  }
+
+  // Deniz kareleri tek parça dokuyla boyanır (kare kare çizilince şerit şerit görünüyordu)
+  function seaFill(test, v) {
+    ctx.beginPath();
+    let any = false;
+    for (let y = v.y0; y <= v.y1; y++) {
+      for (let x = v.x0; x <= v.x1; x++) {
+        if (!test(x, y)) continue;
+        any = true;
+        const d = diamond(x, y, -0.01);
+        ctx.moveTo(d.pts[0][0], d.pts[0][1]);
+        for (let i = 1; i < 4; i++) ctx.lineTo(d.pts[i][0], d.pts[i][1]);
+        ctx.closePath();
+      }
+    }
+    if (!any) return;
+    ctx.fillStyle = texture('deniz', 3) || '#3fa3a6';
+    ctx.fill();
+  }
+
+  function avenueLine(d) {
+    ctx.strokeStyle = GROUND.line;
+    ctx.lineWidth = 1.5 * cam.z;
+    ctx.setLineDash([4 * cam.z, 4 * cam.z]);
+    ctx.beginPath();
+    ctx.moveTo((d.pts[0][0] + d.pts[3][0]) / 2, (d.pts[0][1] + d.pts[3][1]) / 2);
+    ctx.lineTo((d.pts[1][0] + d.pts[2][0]) / 2, (d.pts[1][1] + d.pts[2][1]) / 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
   function drawGround(s, view) {
     const n = CONFIG.gridSize;
+    // açık arsaların çimi tek parça çizilir (kareler arasında çizgi kalmaz)
+    const lawn = texture('cim', 2.2);
+    ctx.beginPath();
+    for (let y = 0; y < n; y++) {
+      for (let x = 0; x < n; x++) {
+        if (!G.isUnlocked(s, x, y)) continue;
+        const d = diamond(x, y, -0.01);
+        ctx.moveTo(d.pts[0][0], d.pts[0][1]);
+        for (let i = 1; i < 4; i++) ctx.lineTo(d.pts[i][0], d.pts[i][1]);
+        ctx.closePath();
+      }
+    }
+    ctx.fillStyle = lawn || GROUND.grassA;
+    ctx.fill();
+    seaFill((x, y) => G.terrainAt(x, y) === 'deniz', { x0: 0, x1: n - 1, y0: 0, y1: n - 1 });
+    // kilitli arsalarda ayrıca biraz koyu yabani çayır (yükü doku zaten taşıyor)
     for (let y = 0; y < n; y++) {
       for (let x = 0; x < n; x++) {
         const d = diamond(x, y);
         const unlocked = G.isUnlocked(s, x, y);
-        const alt = (x + y) % 2 === 0;
-        let fill = unlocked ? (alt ? GROUND.grassA : GROUND.grassB) : (alt ? GROUND.locked : GROUND.lockedB);
+        let fill = null; // çim ve çayır dokuyla çizildi
         const b = G.buildingAt(s, x, y);
         const ter = G.terrainAt(x, y);
         const bridge = G.isAvenue(x, y) && G.terrainAt(x - 1, y) === 'nehir';
         const hood = G.activeHood();
-        let terImg = ter ? sprites[TERRAIN[ter].sprite] : bridge ? sprites[TERRAIN.nehir.sprite] : null;
+        let terImg = ter === 'deniz' ? null : ter ? sprites[TERRAIN[ter].sprite] : bridge ? sprites[TERRAIN.nehir.sprite] : null;
         // Sanayi ve İş Merkezi'nde açık arsalar beton
         const road = b && G.isRoadType(b.type) ? b.type : null;
-        if (!terImg && hood.groundTile && unlocked && !G.isAvenue(x, y) && !road) terImg = sprites[hood.groundTile] || null;
+        if (!terImg && ter !== 'deniz' && hood.groundTile && unlocked && !G.isAvenue(x, y) && !road) terImg = sprites[hood.groundTile] || null;
         if (G.isAvenue(x, y)) fill = GROUND.avenue;
         else if (road) fill = !G.isRoadConnected(s, x, y) ? GROUND.roadOff : road === 'yol-tas' ? GROUND.cobble : GROUND.road;
         if (terImg) {
@@ -167,23 +358,15 @@ export function createRenderer(canvas) {
           poly(bd.pts, GROUND.avenue, '#3c414a');
         } else if (road && ter === 'nehir') {
           drawBridge(x, y, fill);
-        } else if (!terImg || road) {
+        } else if (fill) {
           poly(d.pts, fill);
           if (road) drawRoadStyle(x, y, road);
         }
-        if (G.isAvenue(x, y)) {
-          ctx.strokeStyle = GROUND.line;
-          ctx.lineWidth = 1.5 * cam.z;
-          ctx.setLineDash([4 * cam.z, 4 * cam.z]);
-          ctx.beginPath();
-          ctx.moveTo((d.pts[0][0] + d.pts[3][0]) / 2, (d.pts[0][1] + d.pts[3][1]) / 2);
-          ctx.lineTo((d.pts[1][0] + d.pts[2][0]) / 2, (d.pts[1][1] + d.pts[2][1]) / 2);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
-        if (unlocked && !terImg) {
+        if (G.isAvenue(x, y)) avenueLine(d);
+        // ızgara yalnız inşa ederken ve yol yaparken görünür
+        if (view.grid && unlocked && !road && !G.isAvenue(x, y)) {
           ctx.lineWidth = 1;
-          poly(d.pts, null, 'rgba(40,70,30,0.12)');
+          poly(d.pts, null, 'rgba(255,255,255,0.22)');
         }
       }
     }
@@ -482,17 +665,134 @@ export function createRenderer(canvas) {
     if (b.level > 1) pill(sx + 18 * cam.z, sy + 4 * cam.z, '★'.repeat(b.level - 1), 'rgba(22,32,48,0.75)', '#ffd54a', 9);
   }
 
+  // Harita dışındaki kuşakta ve kilitli arsalarda ağaç, çalı, kaya.
+  // front: harita kenarının önünde kalanlar (binalardan sonra çizilir)
+  function natureItems(s, t, sway, which) {
+    const n = CONFIG.gridSize;
+    const v = visibleTiles(4);
+    const back = [], inside = [], front = [];
+    const x0 = Math.max(v.x0, -RING), x1 = Math.min(v.x1, n - 1 + RING);
+    const y0 = Math.max(v.y0, -RING), y1 = Math.min(v.y1, n - 1 + RING);
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        let count;
+        const inMap = G.inBounds(x, y);
+        if (inMap !== (which === 'inside')) continue;
+        if (inMap) {
+          const ter = G.terrainAt(x, y);
+          if (G.isUnlocked(s, x, y) || G.isAvenue(x, y) || (ter && !TERRAIN[ter].buildable) || ter === 'kum') continue;
+          count = hash(x, y) < 0.3 ? 1 : 0; // kilitli arsada seyrek: nehir ve arsa sınırları görünsün
+        } else {
+          if (outsideTerrain(x, y) || outsideAvenue(x, y) || outsideAvenue(x - 1, y) || outsideAvenue(x + 1, y)) continue;
+          // kenardan uzaklaştıkça orman sıklaşır
+          const dist = Math.max(-x, -y, x - n + 1, y - n + 1);
+          const dens = Math.min(0.75, dist < 2 ? 0.1 : 0.15 + (dist - 2) * 0.12);
+          const h = hash(x, y);
+          count = h < dens ? (h < dens * 0.45 ? 2 : 1) : 0;
+        }
+        for (let k = 0; k < count; k++) {
+          const fx = x + 0.2 + hash(x, y, 2 + k) * 0.6;
+          const fy = y + 0.2 + hash(x, y, 5 + k) * 0.6;
+          let pick = hash(x, y, 13 + k) * NATURE_TOTAL, kind = 'kuknar';
+          for (const [name, nd] of Object.entries(NATURE)) { pick -= nd.weight; if (pick < 0) { kind = name; break; } }
+          const img = sprites[`doga-${kind}`];
+          if (!img) continue;
+          const size = (0.62 + hash(x, y, 9 + k) * 0.35) * (inMap ? 0.85 : 1);
+          const [sx, sy] = toScreen(fx, fy);
+          const w = NATURE[kind].w * TW * cam.z * size;
+          const hgt = w * img.naturalHeight / img.naturalWidth;
+          if (sx + w < 0 || sx - w > W || sy - hgt > H || sy < -10) continue;
+          const phase = hash(x, y, 11 + k) * 6.28;
+          const item = { key: fx + fy, kx: fx, draw: () => drawNature(img, kind, sx, sy, w, hgt, sway ? Math.sin(t / 1100 + phase) * 0.035 * NATURE[kind].sway : 0) };
+          (inMap ? inside : (x >= n || y >= n) ? front : back).push(item);
+        }
+      }
+    }
+    const byKey = (a, b) => a.key - b.key || a.kx - b.kx;
+    back.sort(byKey); front.sort(byKey);
+    return { back, inside, front };
+  }
+
+  function drawNature(img, kind, sx, sy, w, h, shear) {
+    if (kind !== 'cicekler') {
+      ctx.fillStyle = 'rgba(20,40,15,0.24)';
+      ctx.beginPath();
+      ctx.ellipse(sx + w * 0.08, sy, w * 0.42, w * 0.17, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (shear) {
+      // tepesi rüzgârla hafifçe yana yatar, dibi yerinde kalır
+      ctx.setTransform(dpr, 0, dpr * shear, dpr, -dpr * shear * sy, 0);
+      ctx.drawImage(img, sx - w / 2, sy - h * 0.96, w, h);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    } else {
+      ctx.drawImage(img, sx - w / 2, sy - h * 0.96, w, h);
+    }
+  }
+
+  // Harita dışı (çayır, uzanan su, orman) sabittir: ekrandan biraz büyük bir ara belleğe
+  // bir kez çizilir, kaydırırken yalnız yeri değişir. Yakınlaşma bitince ya da kenara
+  // gelince yeniden çizilir. back: haritanın arkası, front: haritanın önündeki ağaçlar.
+  const scenery = { back: document.createElement('canvas'), front: document.createElement('canvas'), key: '', at: 0 };
+  function sceneryKey() {
+    return `${G.activeHood().name}|${W}|${H}|${Object.keys(sprites).length}`;
+  }
+  function renderScenery(s, now) {
+    const M = Math.round(Math.max(W, H) * 0.22);
+    const ld = dpr; // ekranla aynı çözünürlük: her karede ölçeklemeden kopyalanır
+    const save = { ctx, W, H, dpr, x: cam.x, y: cam.y };
+    const cw = W + 2 * M, ch = H + 2 * M;
+    for (const cv of [scenery.back, scenery.front]) {
+      if (cv.width !== Math.round(cw * ld) || cv.height !== Math.round(ch * ld)) { cv.width = Math.round(cw * ld); cv.height = Math.round(ch * ld); }
+    }
+    W = cw; H = ch; dpr = ld; cam.x += M; cam.y += M;
+    try {
+      ctx = scenery.back.getContext('2d');
+      ctx.setTransform(ld, 0, 0, ld, 0, 0);
+      drawOutside();
+      const nat = natureItems(s, 0, false, 'outside');
+      for (const it of nat.back) it.draw();
+      ctx = scenery.front.getContext('2d');
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, scenery.front.width, scenery.front.height);
+      ctx.setTransform(ld, 0, 0, ld, 0, 0);
+      for (const it of nat.front) it.draw();
+    } finally {
+      ({ ctx, W, H, dpr } = save);
+      cam.x = save.x; cam.y = save.y;
+    }
+    Object.assign(scenery, { key: sceneryKey(), x: cam.x, y: cam.y, z: cam.z, M, cw, ch, at: now });
+  }
+  function updateScenery(s, now) {
+    if (scenery.key !== sceneryKey()) return renderScenery(s, now);
+    const k = cam.z / scenery.z;
+    // ara bellek ekranı hâlâ kaplıyor mu?
+    const left = cam.x - (scenery.x + scenery.M) * k, top = cam.y - (scenery.y + scenery.M) * k;
+    const covers = left <= 0 && top <= 0 && left + scenery.cw * k >= W && top + scenery.ch * k >= H;
+    if (!covers || (k !== 1 && now - scenery.zoomAt > 160)) renderScenery(s, now);
+  }
+  function drawSceneryLayer(cv) {
+    const k = cam.z / scenery.z;
+    if (k === 1) {
+      // piksele hizalı kopya (ölçekleme yok, en hızlısı)
+      const px = Math.round((cam.x - scenery.x - scenery.M) * dpr), py = Math.round((cam.y - scenery.y - scenery.M) * dpr);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(cv, px, py);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return;
+    }
+    ctx.drawImage(cv, cam.x - (scenery.x + scenery.M) * k, cam.y - (scenery.y + scenery.M) * k, scenery.cw * k, scenery.ch * k);
+  }
+
   function draw(s, view, t, amb = null) {
     const c = ctx;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const sky = c.createLinearGradient(0, 0, 0, H);
-    sky.addColorStop(0, '#7cc6de');
-    sky.addColorStop(1, '#c4e8d8');
-    c.fillStyle = sky;
-    c.fillRect(0, 0, W, H);
-
+    if (scenery.lastZ !== cam.z) { scenery.zoomAt = t; scenery.lastZ = cam.z; }
+    updateScenery(s, t);
+    drawSceneryLayer(scenery.back);
     drawGround(s, view);
     drawParcels(s);
+    const nature = natureItems(s, t, !!(amb && amb.enabled), 'inside');
 
     const pl = view.placement;
     const sel = view.selectedId ? s.buildings[view.selectedId] : null;
@@ -507,7 +807,7 @@ export function createRenderer(canvas) {
       const g = { id: '_ghost', type: pl.type, x: pl.x, y: pl.y };
       items.push({ b: g, ghost: true, ...keyOf(g) });
     }
-    const all = amb ? items.concat(amb.drawables(s, t)) : items;
+    const all = (amb ? items.concat(amb.drawables(s, t)) : items).concat(nature.inside);
     all.sort((a, b) => a.key - b.key || a.kx - b.kx);
     for (const it of all) {
       if (it.draw) it.draw();
@@ -515,6 +815,7 @@ export function createRenderer(canvas) {
       else drawBuilding(it.b, 1, sel && sel.id === it.b.id);
     }
 
+    drawSceneryLayer(scenery.front);
     if (amb) amb.drawOverlay(t);
     drawParcels(s, true); // fiyat etiketleri ağaçların üstünde kalsın
 
@@ -559,7 +860,7 @@ export function createRenderer(canvas) {
   }
 
   return {
-    cam, ctx, resize, draw, screenToTile, centerOn, zoomAt, pan, toScreen, poly, buildingTop,
+    cam, ctx, resize, draw, screenToTile, centerOn, zoomAt, pan, toScreen, poly, buildingTop, fitZoom,
     get size() { return { W, H }; },
   };
 }

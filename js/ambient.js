@@ -153,48 +153,6 @@ export function createAmbient(R) {
     ctx.fill();
   }
 
-  // ---------- Ağaçlar (kilitli arsalarda; arsa açılınca temizlenir) ----------
-
-  function trees(s, t) {
-    const out = [];
-    const n = CONFIG.gridSize;
-    for (let y = 0; y < n; y++) {
-      for (let x = 0; x < n; x++) {
-        const ter = G.terrainAt(x, y);
-        if (G.isUnlocked(s, x, y) || G.isAvenue(x, y) || (ter && !TERRAIN[ter].buildable) || ter === 'kum') continue;
-        const count = hash(x, y) < 0.45 ? (hash(x, y, 1) < 0.35 ? 2 : 1) : 0;
-        for (let k = 0; k < count; k++) {
-          const fx = x + 0.25 + hash(x, y, 2 + k) * 0.5;
-          const fy = y + 0.25 + hash(x, y, 5 + k) * 0.5;
-          const size = 0.8 + hash(x, y, 9 + k) * 0.5;
-          const phase = hash(x, y, 11 + k) * 6.28;
-          out.push({ key: fx + fy, kx: fx, draw: () => drawTree(fx, fy, size, phase, t) });
-        }
-      }
-    }
-    return out;
-  }
-
-  function drawTree(fx, fy, size, phase, t) {
-    const z = R.cam.z;
-    const [x, y] = scr(fx, fy, 0);
-    const sway = Math.sin(t / 1100 + phase) * 1.6 * z * size;
-    ctx.fillStyle = 'rgba(20,40,15,0.22)';
-    ctx.beginPath();
-    ctx.ellipse(x + 3 * z, y + 1 * z, 8 * z * size, 3.5 * z * size, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = '#7a5434';
-    ctx.fillRect(x - 1.5 * z, y - 9 * z * size, 3 * z, 9 * z * size);
-    const cx = x + sway, cy = y - 15 * z * size;
-    const r = 7.5 * z * size;
-    ctx.fillStyle = '#3f8a3a';
-    ctx.beginPath(); ctx.arc(cx, cy + r * 0.25, r, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#56a84a';
-    ctx.beginPath(); ctx.arc(cx - r * 0.25, cy - r * 0.1, r * 0.78, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#76c25d';
-    ctx.beginPath(); ctx.arc(cx - r * 0.38, cy - r * 0.35, r * 0.38, 0, Math.PI * 2); ctx.fill();
-  }
-
   // ---------- Parçacıklar: duman, parıltı, para ----------
 
   function emit(p) {
@@ -311,7 +269,7 @@ export function createAmbient(R) {
 
   function drawables(s, t) {
     if (!enabled) return [];
-    const out = trees(s, t);
+    const out = [];
     for (const c of cars) {
       const { fx, fy } = pose(c, 0.17);
       out.push({ key: fx + fy, kx: fx, draw: () => drawCar(c) });
