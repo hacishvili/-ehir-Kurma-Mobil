@@ -51,6 +51,7 @@ Oyun kuralları (bağlantı, etki alanı, kira, memnuniyet, kayıt) tarayıcıs�
 | `js/game.js` | Oyun kuralları (ekrandan bağımsız) |
 | `js/render.js` | İzometrik şehir çizimi |
 | `js/ambient.js` | Şehirdeki hareket: arabalar, yürüyen insanlar, ağaçlar, duman, parıltı, saçılan paralar |
+| `js/audio.js` | Ses efektleri ve müzik (dosyasız, tarayıcının ses motoruyla üretilir) |
 | `js/main.js` | Dokunma, menüler, kayıt |
 | `css/style.css` | Ekran düzeni |
 | `img/binalar/` | Bina görselleri. Kurallar ve dosya adları `img/binalar/OKU.md` içinde. |

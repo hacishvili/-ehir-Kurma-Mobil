@@ -65,6 +65,11 @@ export const CONFIG = {
   storyHours: 48,          // isteği karşılamak için süre (oyun saati)
   storySatBonus: 15,       // tamamlanınca kiracının memnuniyetine kalıcı ek
 
+  // Günlük hedefler
+  dailyCount: 3,
+  dailyDiamonds: 1,        // her hedef
+  dailyBonusDiamonds: 2,   // üçü birden tamamlanınca
+
   // Koleksiyon: kira toplarken düşen parçalar; set tamamlanınca kalıcı kira bonusu
   collectionDropChance: 0.12,
   collectionSetBonus: 2, // her tamamlanan set kiraya kalıcı +%2
@@ -359,6 +364,16 @@ export const STORIES = [
     request: { kind: 'pay', amount: 400 }, reward: { diamonds: 3, money: 0 } },
   { id: 'basin', tenants: ['unlu'], title: 'Basın toplantısı', text: 'Fotoğraflarda arkada bir simge yapı görünsün: saat kulesi ya da gökdelen.',
     request: { kind: 'near', types: ['saatkulesi', 'gokdelen'] }, reward: { unlock: 'nadir-gul', diamonds: 5 } },
+];
+
+// Günlük hedefler: her gün bu listeden 3 tanesi seçilir. stat: sayaç (s.stats), n: seviyeye göre hedef
+export const DAILY_GOALS = [
+  { id: 'kira', text: n => `${n} kira topla`, stat: 'rentsCollected', n: lv => 4 + Math.min(8, Math.floor(lv / 2)) },
+  { id: 'kontrat', text: n => `${n} kontrat imzala`, stat: 'contractsSigned', n: lv => 3 + Math.min(7, Math.floor(lv / 2)) },
+  { id: 'insa', text: n => `${n} bina ya da süsleme kur`, stat: 'built', n: lv => 2 + Math.min(4, Math.floor(lv / 4)) },
+  { id: 'gelir', text: n => `${n} kez dükkan geliri topla`, stat: 'incomeCollected', n: lv => 3 + Math.min(5, Math.floor(lv / 3)) },
+  { id: 'para', text: n => `${n.toLocaleString('tr-TR')} para kazan`, stat: 'moneyEarned', n: lv => 800 * lv },
+  { id: 'yenile', text: n => `${n} kiracının kontratını yenile`, stat: 'renewals', n: lv => 2 + Math.min(4, Math.floor(lv / 4)) },
 ];
 
 export const COLLECTION = {

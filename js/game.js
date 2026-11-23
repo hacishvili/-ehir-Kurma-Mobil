@@ -1,5 +1,5 @@
 // Oyun mantığı. Ekran çizimi ve dokunma burada yok; böylece testler tarayıcısız çalışır.
-import { CONFIG, BUILDINGS, TENANTS, QUESTS, TERRAIN, COLLECTION, HOODS, TALL, MARKET_EVENTS, STORIES } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, QUESTS, TERRAIN, COLLECTION, HOODS, TALL, MARKET_EVENTS, STORIES, DAILY_GOALS } from './data.js';
 
 export const MIN = 60 * 1000;
 export const HOUR = 60 * MIN;
@@ -43,6 +43,7 @@ export function hydrate(s) {
   if (!s.hood) { s.hood = 'eski'; s.hoodsOpen = ['eski']; s.hoods = {}; }
   if (!s.rareUnlocked) s.rareUnlocked = [];
   if (!s.stats.storiesDone) s.stats.storiesDone = 0;
+  for (const k of ['built', 'incomeCollected', 'renewals']) if (!s.stats[k]) s.stats[k] = 0;
   if (!s.market) s.market = { nextEventAt: s.gameTime + CONFIG.market.eventEveryHours * HOUR / 2, nextHistAt: s.gameTime, hoods: {} };
   for (const id of s.hoodsOpen) ensureMarket(s, id);
   setActiveHood(s.hood);
@@ -391,6 +392,7 @@ export function signContract(s, houseId, cardIndex) {
   if (s.money < q.fee) return fail('İmza ücreti için yeterli para yok.');
   s.money -= q.fee;
   // aynı kiracının kaçıncı yenilemesi (hikayeler için)
+  if (renewing) s.stats.renewals++;
   if (renewing && h.tenure?.tenant === card.tenant) h.tenure.renewals++;
   else { h.tenure = { tenant: card.tenant, renewals: 0 }; h.story = null; }
   h.contract = {
@@ -529,6 +531,67 @@ function expireStories(s) {
   }
 }
 
+// ---------- Günlük hedefler ----------
+
+// Bugünün tarihi (cihazın yerel takvimi), örn. "2026-11-23"
+export function todayKey(date = new Date()) {
+  const p = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${p(date.getMonth() + 1)}-${p(date.getDate())}`;
+}
+
+// Gün değiştiyse yeni hedefler seç (aynı gün hep aynı hedefler)
+export function ensureDaily(s, today = todayKey()) {
+  if (s.daily?.date === today) return s.daily;
+  let h = 0;
+  for (const ch of today) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const ids = DAILY_GOALS.map(g => g.id).sort((a, b) => ((h ^ hashStr(a)) % 997) - ((h ^ hashStr(b)) % 997));
+  s.daily = {
+    date: today,
+    bonusClaimed: false,
+    goals: ids.slice(0, CONFIG.dailyCount).map(id => {
+      const g = DAILY_GOALS.find(x => x.id === id);
+      return { id, n: g.n(s.level), base: s.stats[g.stat] || 0, claimed: false };
+    }),
+  };
+  emit(s, 'dailyNew', {});
+  return s.daily;
+}
+
+function hashStr(str) {
+  let h = 7;
+  for (const ch of str) h = (h * 131 + ch.charCodeAt(0)) >>> 0;
+  return h;
+}
+
+export function dailyProgress(s, goal) {
+  const g = DAILY_GOALS.find(x => x.id === goal.id);
+  return Math.min(goal.n, Math.max(0, (s.stats[g.stat] || 0) - goal.base));
+}
+
+export function dailyText(goal) {
+  return DAILY_GOALS.find(x => x.id === goal.id).text(goal.n);
+}
+
+export function claimDaily(s, index) {
+  const goal = s.daily?.goals[index];
+  if (!goal || goal.claimed) return fail('Bu hedef zaten alındı.');
+  if (dailyProgress(s, goal) < goal.n) return fail('Hedef henüz tamamlanmadı.');
+  goal.claimed = true;
+  s.diamonds += CONFIG.dailyDiamonds;
+  let bonus = 0;
+  if (!s.daily.bonusClaimed && s.daily.goals.every(g => g.claimed)) {
+    s.daily.bonusClaimed = true;
+    bonus = CONFIG.dailyBonusDiamonds;
+    s.diamonds += bonus;
+  }
+  addXp(s, 10);
+  return ok({ diamonds: CONFIG.dailyDiamonds + bonus, bonus });
+}
+
+export function dailyReadyCount(s) {
+  return (s.daily?.goals || []).filter(g => !g.claimed && dailyProgress(s, g) >= g.n).length;
+}
+
 // ---------- Elmas ----------
 
 export function rushCost(s, h) {
@@ -584,6 +647,7 @@ export function collectIncome(s, id) {
   if (amount < 1) return fail('Henüz gelir birikmedi.');
   b.stored -= amount;
   s.money += amount;
+  s.stats.incomeCollected++;
   s.stats.moneyEarned += amount;
   const xp = Math.max(1, Math.round(amount / 40));
   addXp(s, xp);
@@ -711,7 +775,8 @@ export function build(s, type, x, y) {
   s.buildings[id] = { id, type, x, y, paid: cost, paidIndex: marketIndex(s), contract: null, renewal: null, cards: null, stored: 0 };
   changed(s);
   if (cost > 0) addXp(s, Math.max(1, Math.round(cost / 25)));
-  emit(s, 'built', { id, type });
+  if (type !== 'yol') s.stats.built++;
+  emit(s, 'built', { id, buildingType: type });
   return ok({ id, cost });
 }
 

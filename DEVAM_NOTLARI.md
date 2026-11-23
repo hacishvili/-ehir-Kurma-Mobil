@@ -162,3 +162,12 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 - Ödül: nadir süsleme açılır (+ elmas/para), kiracının memnuniyeti kalıcı +15. Kiracı ayrılırsa hikaye kapanır.
 - 4 nadir süsleme (Claude üretti, 4 kredi): Asırlık Çınar, Nilüferli Havuz, Antika Sokak Saati, Gül Bahçesi. Yalnız hikayeyle açılır (`rare: true`, `s.rareUnlocked`); İnşa menüsünde "📜 Hikayeyle açılır".
 - Ekran: haritada evin yanında 📜 balonu, ev panelinde istek kartı, açılınca kutlama penceresi, Nasıl oynanır'a madde. 2 yeni test (toplam 33).
+
+## 2026-11-23 — Günlük hedefler ve ses
+
+- Günlük hedefler (`DAILY_GOALS`): cihazın takvim gününe göre 3 hedef (aynı gün hep aynı; tarih karışımıyla seçilir). Hedefler sayaçlardan ilerler: kira topla, kontrat imzala, bina kur, dükkan geliri topla, para kazan, kontrat yenile. Her biri 1 elmas, üçü birden +2. Üstte 🎯 düğmesi, alınacak varsa sarı yanıp söner.
+- Yeni sayaçlar: `stats.built`, `stats.incomeCollected`, `stats.renewals`.
+- Hata düzeltmesi: 'built' olayında `type` alanı olay adını eziyordu; artık `buildingType`.
+- Ses (`js/audio.js`): Web Audio ile üretilen efektler (para, inşaat, kontrat, seviye, ödül çanı, haber, hata, dokunma) ve sakin döngüsel müzik (C–Am–F–G, yumuşak akor + pentatonik melodi). İlk dokunuşta açılır; sekme arka plandayken susar. Menü → Ses: efektler ve müzik ayrı ayrı açılıp kapanır (cihaz ayarı).
+- Sesler test ortamında hatasız çalıştı ama kulakla dinlenmedi; kullanıcı telefonda dinleyip söyleyecek.
+- 1 yeni test (toplam 34).

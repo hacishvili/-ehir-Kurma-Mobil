@@ -3,6 +3,7 @@ import { CONFIG, BUILDINGS, TENANTS, CATEGORIES, QUESTS, COLLECTION, HOODS, STOR
 import * as G from './game.js';
 import { createRenderer, loadSprites } from './render.js';
 import { createAmbient } from './ambient.js';
+import * as A from './audio.js';
 
 const SAVE_KEY = 'emlak-sehri-kayit-v1';
 const $ = id => document.getElementById(id);
@@ -29,18 +30,28 @@ function loadSave(hotData) {
 }
 
 // Hareket ayarı oyun kaydından ayrı tutulur (cihaz ayarı)
+// Cihaz ayarları (oyun kaydından ayrı): hareket, efekt sesi, müzik
+const prefs = { motion: true, sfx: true, music: true };
+
 function loadPrefs() {
-  let motion = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  prefs.motion = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   try {
     const p = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
-    if (typeof p.motion === 'boolean') motion = p.motion;
+    for (const k of Object.keys(prefs)) if (typeof p[k] === 'boolean') prefs[k] = p[k];
   } catch (e) { /* varsayılan */ }
-  AMB.enabled = motion;
+  AMB.enabled = prefs.motion;
+  A.setSfx(prefs.sfx);
+  A.setMusic(prefs.music);
+}
+
+function savePrefs() {
+  try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* depolama kapalı */ }
 }
 
 function setMotion(on) {
+  prefs.motion = on;
   AMB.enabled = on;
-  try { localStorage.setItem(PREF_KEY, JSON.stringify({ motion: on })); } catch (e) { /* depolama kapalı */ }
+  savePrefs();
 }
 
 function save() {
@@ -97,6 +108,8 @@ function frame(t) {
 function drainEvents(t) {
   const evs = s.events.splice(0);
   for (const e of evs) {
+    const SOUND = { collected: 'coin', built: 'build', signed: 'sign', levelUp: 'levelUp', storyStarted: 'news', storyDone: 'chime', marketEvent: 'news', collectionDrop: 'chime', hoodOpened: 'chime' };
+    if (SOUND[e.type] && !(e.type === 'built' && e.buildingType === 'yol')) A.play(SOUND[e.type]);
     if (e.type === 'collected') {
       view.floaters.push({ x: e.x, y: e.y, text: `+${G.formatMoney(e.amount)} 🪙`, t0: t });
       AMB.burst(e.x, e.y, e.amount);
@@ -156,6 +169,13 @@ function updateHud() {
   const w = `${pct.toFixed(1)}%`;
   if (hudCache.xp !== w) { hudCache.xp = w; $('xpfill').style.width = w; }
 
+  G.ensureDaily(s);
+  const dDone = s.daily.goals.filter(g => g.claimed).length;
+  const ready = G.dailyReadyCount(s);
+  setText('dailyProg', `${dDone}/${s.daily.goals.length}`);
+  $('dailyBtn').classList.toggle('ready', ready > 0);
+  $('dailyBtn').hidden = mode !== 'normal';
+
   const q = G.currentQuest(s);
   const qEl = $('quest');
   qEl.hidden = !q || mode !== 'normal';
@@ -172,6 +192,7 @@ function updateHud() {
 
 let toastTimer = 0;
 function toast(msg, bad = false) {
+  if (bad) A.play('error');
   const el = $('toast');
   el.textContent = msg;
   el.classList.toggle('bad', bad);
@@ -770,6 +791,36 @@ function openParcel(px, py) {
   });
 }
 
+// ---------- Günlük hedefler ----------
+
+function openDaily() {
+  view.selectedId = null;
+  openSheet({
+    sig: () => JSON.stringify(s.daily) + s.daily.goals.map(g => G.dailyProgress(s, g)).join(),
+    render: () => {
+      const d = s.daily;
+      let html = `<h2>🎯 Günlük hedefler</h2><p class="sub">Her gün 3 yeni hedef. Her biri ${CONFIG.dailyDiamonds} elmas; üçü birden +${CONFIG.dailyBonusDiamonds} elmas daha.</p><div class="daily">`;
+      d.goals.forEach((g, i) => {
+        const p = G.dailyProgress(s, g);
+        const done = p >= g.n;
+        html += `<div class="goal ${g.claimed ? 'claimed' : ''}">
+          <div class="row"><b class="grow">${G.dailyText(g)}</b><span class="sub" style="margin:0">${G.formatMoney(p)}/${G.formatMoney(g.n)}</span></div>
+          <div class="meter"><span style="width:${(p / g.n * 100).toFixed(1)}%;background:${done ? 'var(--good)' : 'var(--accent)'}"></span></div>
+          ${g.claimed ? '<span class="chip good">✓ Alındı</span>' : `<button type="button" class="btn ${done ? 'coin' : ''} small" data-act="claim" data-i="${i}" ${done ? '' : 'disabled'}>${done ? `Al · ${CONFIG.dailyDiamonds} elmas` : 'Devam ediyor'}</button>`}
+        </div>`;
+      });
+      html += `</div><p class="sub" style="margin:0">${d.bonusClaimed ? 'Bugünün bonusu alındı. Yarın yeni hedefler gelecek.' : 'Hedefler gece yarısı yenilenir.'}</p>`;
+      return html;
+    },
+    actions: {
+      claim: ds => {
+        const r = G.claimDaily(s, Number(ds.i));
+        if (result(r, r.bonus ? `Üç hedef tamam! +${r.diamonds} elmas` : `+${r.diamonds} elmas`)) { A.play('chime'); save(); }
+      },
+    },
+  });
+}
+
 // ---------- Mahalleler ----------
 
 function openHoods() {
@@ -843,8 +894,11 @@ function goHood(id) {
 function openMenu() {
   view.selectedId = null;
   openSheet({
-    sig: () => `${s.speed}|${AMB.enabled}|${JSON.stringify(s.collection)}|${s.collectionSets}`,
+    sig: () => `${s.speed}|${AMB.enabled}|${prefs.sfx}|${prefs.music}|${JSON.stringify(s.collection)}|${s.collectionSets}`,
     render: () => `<h2>Menü</h2>
+      <div><h3>Ses</h3>
+        <div class="btns"><button type="button" class="btn ${prefs.sfx ? 'coin' : ''}" data-act="sfx">Efektler: ${prefs.sfx ? 'açık' : 'kapalı'}</button>
+        <button type="button" class="btn ${prefs.music ? 'coin' : ''}" data-act="music">Müzik: ${prefs.music ? 'açık' : 'kapalı'}</button></div></div>
       <div><h3>Şehirde hareket</h3>
         <div class="btns"><button type="button" class="btn ${AMB.enabled ? 'coin' : ''}" data-act="motion" data-v="1">Açık</button>
         <button type="button" class="btn ${AMB.enabled ? '' : 'coin'}" data-act="motion" data-v="0">Kapalı</button></div>
@@ -863,6 +917,8 @@ function openMenu() {
     actions: {
       speed: ds => { s.speed = Number(ds.v); toast(`Zaman hızı ×${ds.v}`); save(); },
       motion: ds => setMotion(ds.v === '1'),
+      sfx: () => { prefs.sfx = !prefs.sfx; A.setSfx(prefs.sfx); savePrefs(); panel.sigValue = ''; },
+      music: () => { prefs.music = !prefs.music; A.unlock(); A.setMusic(prefs.music); savePrefs(); panel.sigValue = ''; },
       set: () => { if (result(G.completeSet(s), `Set tamamlandı! Kira bonusu artık +%${s.collectionSets * CONFIG.collectionSetBonus}`)) { panel.sigValue = ''; save(); } },
       reset: (ds, el) => {
         if (el.dataset.armed !== '1') { el.dataset.armed = '1'; el.textContent = 'Her şey silinecek. Emin misin?'; return; }
@@ -967,7 +1023,12 @@ function bindUi() {
   canvas.addEventListener('pointercancel', onUp);
   canvas.addEventListener('wheel', onWheel, { passive: false });
   window.addEventListener('resize', () => R.resize());
-  document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) save(); A.pause(document.hidden); });
+  // tarayıcı sesi ilk dokunuştan sonra açar
+  const unlockAudio = () => { A.unlock(); };
+  document.addEventListener('pointerdown', unlockAudio, { once: true });
+  for (const b of document.querySelectorAll('.dock-btn')) b.addEventListener('click', () => A.play('tap'));
+  $('dailyBtn').addEventListener('click', () => { A.play('tap'); if (mode === 'road') setMode('normal'); openDaily(); });
   window.addEventListener('pagehide', save);
 
   $('sheetBody').addEventListener('click', onSheetClick);
@@ -986,7 +1047,7 @@ function bindUi() {
   $('quest').addEventListener('click', () => {
     if (G.questComplete(s)) {
       const r = G.claimQuest(s);
-      if (r.ok) toast(`Görev tamam! +${G.formatMoney(r.reward.money)} 🪙${r.reward.xp ? ` +${r.reward.xp} XP` : ''}`);
+      if (r.ok) { A.play('chime'); toast(`Görev tamam! +${G.formatMoney(r.reward.money)} 🪙${r.reward.xp ? ` +${r.reward.xp} XP` : ''}${r.reward.diamonds ? ` +${r.reward.diamonds} elmas` : ''}`); }
       save();
     } else {
       toast(G.currentQuest(s)?.text || '');

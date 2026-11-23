@@ -426,3 +426,24 @@ test('ödemeli istek parayı düşer; süresi geçen istek kapanır', () => {
   G.advance(s, 2 * G.HOUR);
   assert.equal(h.story, null);
 });
+
+test('günlük hedefler: günde 3 hedef, aynı gün aynı, ilerleme ve elmas ödülü', () => {
+  const s = rich();
+  const d1 = G.ensureDaily(s, '2026-11-23');
+  assert.equal(d1.goals.length, 3);
+  const ids = d1.goals.map(g => g.id).join();
+  assert.equal(G.ensureDaily(s, '2026-11-23').goals.map(g => g.id).join(), ids, 'aynı gün değişmez');
+  // her hedefi sayaçla tamamla
+  for (const g of d1.goals) {
+    const stat = { kira: 'rentsCollected', kontrat: 'contractsSigned', insa: 'built', gelir: 'incomeCollected', para: 'moneyEarned', yenile: 'renewals' }[g.id];
+    assert.equal(G.claimDaily(s, d1.goals.indexOf(g)).ok, false);
+    s.stats[stat] += g.n;
+  }
+  const dia = s.diamonds;
+  assert.ok(G.claimDaily(s, 0).ok);
+  assert.ok(G.claimDaily(s, 1).ok);
+  const last = G.claimDaily(s, 2);
+  assert.equal(last.bonus, 2);
+  assert.equal(s.diamonds, dia + 3 + 2);
+  assert.notEqual(G.ensureDaily(s, '2026-11-24'), d1, 'ertesi gün yeni hedefler');
+});
