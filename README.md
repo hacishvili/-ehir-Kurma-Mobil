@@ -51,5 +51,6 @@ Oyun kuralları (bağlantı, etki alanı, kira, memnuniyet, kayıt) tarayıcıs�
 | `js/render.js` | İzometrik şehir çizimi |
 | `js/main.js` | Dokunma, menüler, kayıt |
 | `css/style.css` | Ekran düzeni |
+| `img/binalar/` | Bina görselleri. Kurallar ve dosya adları `img/binalar/OKU.md` içinde. |
 | `tests/` | Kural testleri |
 | `DEVAM_NOTLARI.md` | Oturumlar arası notlar: ne yapıldı, sırada ne var |

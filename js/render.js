@@ -19,6 +19,25 @@ const GROUND = {
   line: '#f4f1e4',
 };
 
+// Bina görselleri: img/binalar/<tür>.png varsa kutu yerine o çizilir, yoksa kutu kalır.
+// Kurallar için img/binalar/OKU.md dosyasına bak.
+export const SPRITE_DIR = 'img/binalar/';
+const sprites = {};
+
+export function loadSprites(onLoad = () => {}) {
+  for (const type of Object.keys(BUILDINGS)) {
+    if (type === 'yol') continue;
+    const img = new Image();
+    img.onload = () => { sprites[type] = img; onLoad(type); };
+    img.onerror = () => {};
+    img.src = `${SPRITE_DIR}${BUILDINGS[type].sprite || type}.png`;
+  }
+}
+
+export function hasSprite(type) {
+  return !!sprites[type];
+}
+
 export function createRenderer(canvas) {
   const ctx = canvas.getContext('2d');
   const cam = { x: 0, y: 0, z: 1 };
@@ -188,8 +207,32 @@ export function createRenderer(canvas) {
     ctx.closePath();
   }
 
+  // Binanın karenin üst köşesinden ne kadar yükseğe çıktığı (balon ve etiketler için)
+  function buildingTop(type) {
+    const img = sprites[type];
+    if (img) return TW * cam.z * (BUILDINGS[type].spriteScale || 1) * img.naturalHeight / img.naturalWidth - TH * cam.z;
+    return (BUILDINGS[type].height || 0) * cam.z;
+  }
+
+  function drawSprite(b, img, alpha, selected, tint) {
+    const d = BUILDINGS[b.type];
+    const [sx, sy] = toScreen(b.x, b.y);
+    const w = TW * cam.z * (d.spriteScale || 1);
+    const h = w * img.naturalHeight / img.naturalWidth;
+    const bottom = sy + TH * cam.z; // karenin alt köşesi = görselin alt kenarı
+    ctx.globalAlpha = alpha;
+    if (tint) poly(diamond(b.x, b.y, 0.04).pts, 'rgba(229,83,75,0.55)');
+    if (selected) {
+      ctx.lineWidth = 2.5;
+      poly(diamond(b.x, b.y, 0.04).pts, 'rgba(255,255,255,0.25)', '#ffffff');
+    }
+    ctx.drawImage(img, sx - w / 2, bottom - h, w, h);
+    ctx.globalAlpha = 1;
+  }
+
   function drawBuilding(b, alpha = 1, selected = false, tint = null) {
     const d = BUILDINGS[b.type];
+    if (sprites[b.type]) return drawSprite(b, sprites[b.type], alpha, selected, tint);
     const col = CAT_COLORS[d.cat];
     const h = (d.height || 0) * cam.z;
     const inset = d.cat === 'kamu' && !d.height ? 0.08 : 0.2;
@@ -267,7 +310,7 @@ export function createRenderer(canvas) {
   function drawStatus(s, b, t) {
     const d = BUILDINGS[b.type];
     const [sx, sy] = toScreen(b.x, b.y);
-    const top = sy - (d.height || 0) * cam.z - 4 * cam.z;
+    const top = sy - buildingTop(b.type) - 4 * cam.z;
     const pulse = 1 + Math.sin(t / 220) * 0.06;
     if (G.isHouse(b)) {
       const st = G.houseStatus(s, b);
@@ -347,14 +390,14 @@ export function createRenderer(canvas) {
         const delta = after - (pl.moveId ? G.bonusAt(s, h.x, h.y, tenant).total : before);
         if (delta === 0) continue;
         const [sx, sy] = toScreen(h.x, h.y);
-        const top = sy - (BUILDINGS[h.type].height || 0) * cam.z - 6 * cam.z;
+        const top = sy - buildingTop(h.type) - 6 * cam.z;
         pill(sx, top, `${delta > 0 ? '+' : ''}%${delta}`, delta > 0 ? '#1f8f55' : '#c43d3d', '#ffffff', 12);
       }
     }
     if (d.cat === 'konut') {
       const v = G.bonusAt(s, pl.x, pl.y, null, { ignoreId: pl.moveId }).total;
       const [sx, sy] = toScreen(pl.x, pl.y);
-      const top = sy - (d.height || 0) * cam.z - 8 * cam.z;
+      const top = sy - buildingTop(pl.type) - 8 * cam.z;
       pill(sx, top, `konum ${v >= 0 ? '+' : ''}%${v}`, v > 0 ? '#1f8f55' : v < 0 ? '#c43d3d' : 'rgba(22,32,48,0.8)', '#fff', 12);
     }
   }

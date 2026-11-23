@@ -1,7 +1,7 @@
 // Oyunun ekranı: döngü, dokunma, menüler. Kurallar game.js'te, rakamlar data.js'te.
 import { CONFIG, BUILDINGS, TENANTS, CATEGORIES, QUESTS } from './data.js';
 import * as G from './game.js';
-import { createRenderer } from './render.js';
+import { createRenderer, loadSprites } from './render.js';
 
 const SAVE_KEY = 'emlak-sehri-kayit-v1';
 const $ = id => document.getElementById(id);
@@ -52,6 +52,7 @@ function start(hotData = {}) {
   s.events.length = 0;
   lastWall = Date.now();
   bindUi();
+  loadSprites();
   requestAnimationFrame(frame);
   setInterval(save, 5000);
   window.claude?.hot?.snapshot?.(() => ({ save: G.serialize(s) }));

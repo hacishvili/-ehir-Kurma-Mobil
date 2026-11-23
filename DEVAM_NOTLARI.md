@@ -23,3 +23,14 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 1. Kullanıcı telefonda oynayıp geri bildirim verecek: kira miktarları, süreler, fiyatlar hissi.
 2. Geri bildirime göre `js/data.js` rakamlarını ayarlamak.
 3. 2. adım: emlak piyasası (mahalle endeksi, al-sat), görsel tarz kararı, Sahil mahallesi.
+
+## 2026-11-23 — Bina görseli sistemi
+
+**Yapılan**
+- `img/binalar/<tür>.png` varsa oyun kutu yerine o görseli çiziyor; yoksa kutu kalıyor. Görseller teker teker eklenebilir.
+- Görsel kuralları ve dosya adları `img/binalar/OKU.md` içinde (izometrik açı, şeffaf arka plan, zemin baklavası görselin altına oturur).
+- Deneme görseliyle telefonda denendi: bina kareye doğru oturuyor, bonus etiketleri ve balonlar görselin üstünde çıkıyor.
+
+**Açık**
+- Görsel tarzı kararı (çizgi film / low-poly / gerçekçi) kullanıcıda.
+- Higgsfield bakiyesi 0,4 kredi; bir görsel 0,75 kredi. Higgsfield ile üretim için kredi gerekli.
