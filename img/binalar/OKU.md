@@ -29,3 +29,13 @@ Bütün binaların aynı oyunun parçası gibi görünmesi için hepsi şu kural
 6. **Tarz:** Bütün binalar aynı tarzda (aynı çizgi kalınlığı, aynı renk doygunluğu). Ayrıntılar: `docs/Gorsel-Tarz-Rehberi.md`.
 
 Görsel karede biraz büyük ya da küçük durursa `js/data.js` içinde o binaya `spriteScale: 1.1` gibi bir ayar eklenir.
+
+## Hazırlama aracı
+
+Üretilen görseli bu klasöre elle koymak yerine şu komutla hazırla:
+
+```bash
+python3 tools/gorsel_hazirla.py img/kaynak/kafe.webp kafe
+```
+
+Araç siyah ya da beyaz düz arka planı siler, boş kenarları kırpar, açıyı oyunun karelerine uydurur ve `img/binalar/kafe.png` olarak kaydeder. Kaynak görsel `img/kaynak/` klasöründe saklanır; sonradan yeniden işlemek gerekirse oradan alınır.

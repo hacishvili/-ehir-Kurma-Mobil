@@ -58,3 +58,11 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 **Sırada**
 - Kare kare animasyon (neon, çeşme) altyapısı: hareketli görseller geldiğinde.
 - Görseli olmayan binalar için tarayıcı konsolunda "dosya bulunamadı" uyarısı çıkıyor; zararsız.
+
+## 2026-11-23 — İlk bina görseli: Müstakil Ev
+
+- Kullanıcı Higgsfield sitesinde sınırsız hakla (GPT Image 2.6) müstakil evi üretti. Kaynak: `img/kaynak/ev.webp`.
+- Higgsfield'ın sınırsız hakkı bağlantı (MCP) üzerinden görünmüyor; Claude üretirse 1000 krediden düşer. Kullanıcı kredi harcamayı onaylamadı. Şimdilik yol: kullanıcı sitede üretir, Claude hazırlar.
+- `tools/gorsel_hazirla.py` yazıldı: siyah arka planı siler, kırpar, gerçek izometrik açıyı (1,73) oyunun 2:1 karesine uydurur (dikeyde %13 basma), 512 px'e küçültür.
+- Oyunda denendi (telefon boyutu): bahçe kareyi dolduruyor, balonlar evin üstünde.
+- Bu ev, diğer binalar üretilirken örnek görsel olarak verilecek.
