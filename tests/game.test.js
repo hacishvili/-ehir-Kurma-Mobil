@@ -383,3 +383,46 @@ test('piyasa olayı hedefi değiştirir ve süresi bitince kalkar', () => {
   G.advance(s, 49 * G.HOUR);
   assert.equal(G.eventOf(s), null);
 });
+
+function rentCycle(s, id, rng = () => 0) {
+  const h = s.buildings[id];
+  G.advance(s, h.contract.minutes * G.MIN + 1);
+  return G.collectRent(s, id, rng);
+}
+
+test('kiracı hikayesi: iki memnun yenilemeden sonra istek gelir, karşılanınca nadir süsleme açılır', () => {
+  const s = rich();
+  s.market.nextEventAt = Infinity;
+  const { id } = G.build(s, 'ev', AX + 1, 5);
+  const h = s.buildings[id];
+  G.build(s, 'park', AX + 2, 5);
+  h.cards = [{ tenant: 'emekli', minutes: 480, demand: { kind: 'near', type: 'park' } }];
+  G.signContract(s, id, 0);
+  const noDrop = () => 0.99; // koleksiyon düşmesin, hikaye başlamasın
+  rentCycle(s, id, noDrop);
+  G.signContract(s, id, 'renew');
+  rentCycle(s, id, () => 0.5); // 0.5 < storyChance: hikaye başlar (koleksiyon şansı 0.12 değil)
+  assert.ok(h.story, 'hikaye başladı');
+  assert.equal(G.storyOf(s, h).id, 'torun');
+  assert.ok(G.storyMet(s, h), 'park zaten yakında');
+  assert.equal(G.build(s, 'nadir-cinar', AX + 1, 6).ok, false, 'nadir süsleme kilitli');
+  assert.ok(G.completeStory(s, id).ok);
+  assert.ok(s.rareUnlocked.includes('nadir-cinar'));
+  assert.ok(G.build(s, 'nadir-cinar', AX + 1, 6).ok);
+});
+
+test('ödemeli istek parayı düşer; süresi geçen istek kapanır', () => {
+  const s = rich();
+  s.market.nextEventAt = Infinity;
+  const { id } = G.build(s, 'ev', AX + 1, 5);
+  const h = s.buildings[id];
+  h.tenure = { tenant: 'genc', renewals: 1 };
+  h.contract = { tenant: 'genc', minutes: 60, demand: null, rent: 100, xp: 1, start: 0, end: 0 };
+  h.story = { id: 'dugun', until: s.gameTime + 10 * G.HOUR };
+  const m = s.money;
+  assert.ok(G.completeStory(s, id).ok);
+  assert.equal(s.money, m - 1500);
+  h.story = { id: 'is', until: s.gameTime + G.HOUR };
+  G.advance(s, 2 * G.HOUR);
+  assert.equal(h.story, null);
+});

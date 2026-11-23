@@ -1,5 +1,5 @@
 // Oyunun ekranı: döngü, dokunma, menüler. Kurallar game.js'te, rakamlar data.js'te.
-import { CONFIG, BUILDINGS, TENANTS, CATEGORIES, QUESTS, COLLECTION, HOODS } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, CATEGORIES, QUESTS, COLLECTION, HOODS, STORIES } from './data.js';
 import * as G from './game.js';
 import { createRenderer, loadSprites } from './render.js';
 import { createAmbient } from './ambient.js';
@@ -103,6 +103,14 @@ function drainEvents(t) {
       buzz(12);
     } else if (e.type === 'levelUp') {
       showLevelUp(e.level, e.reward, e.diamonds);
+    } else if (e.type === 'storyStarted') {
+      view.floaters.push({ x: e.x, y: e.y, text: '📜 yeni istek', t0: t + 600, color: '#ffd9a8' });
+      toast(`📜 Bir kiracın istekte bulundu: ${e.title} Eve dokun.`);
+    } else if (e.type === 'storyDone') {
+      if (e.unlock) showRareUnlocked(e.unlock);
+      else toast('Kiracın çok mutlu! Ödül alındı.');
+    } else if (e.type === 'storyExpired') {
+      toast('Bir kiracının isteğinin süresi doldu.', true);
     } else if (e.type === 'marketEvent') {
       const where = e.hood === s.hood ? '' : `${HOODS[e.hood].name}: `;
       toast(`📰 ${where}${e.text} (${e.effect > 0 ? '+' : ''}${e.effect} endeks)`, e.effect < 0);
@@ -497,6 +505,30 @@ function demandChip(met, demand) {
   return `<span class="chip ${met ? 'good' : 'bad'}">${met ? '✓' : '✗'} ${G.demandText(demand)}</span>`;
 }
 
+// Kiracının özel isteği
+function storyCard(h) {
+  const st = G.storyOf(s, h);
+  if (!st) return '';
+  const met = G.storyMet(s, h);
+  const r = st.request;
+  let req;
+  if (r.kind === 'pay') req = `${G.formatMoney(r.amount)} 🪙 destek`;
+  else if (r.kind === 'near') req = `Yakınında: ${r.types.map(t => BUILDINGS[t].name).join(' ya da ')}`;
+  else req = `Konum bonusu en az %${r.min} (şu an %${G.bonusAt(s, h.x, h.y).total})`;
+  const rw = st.reward;
+  const reward = [rw.unlock ? `nadir süsleme: <b>${BUILDINGS[rw.unlock].name}</b>${s.rareUnlocked.includes(rw.unlock) ? ' (zaten açık)' : ''}` : '',
+    rw.diamonds ? `${rw.diamonds} elmas` : '', rw.money ? `${G.formatMoney(rw.money)} 🪙` : ''].filter(Boolean).join(' + ');
+  const btn = r.kind === 'pay' ? `Öde ve sevindir (${G.formatMoney(r.amount)})` : 'İsteği tamamla';
+  return `<div class="story">
+    <div class="row">${portrait(h.tenure.tenant, 40)}<div class="grow"><div class="story-t">📜 ${st.title}</div>
+      <div class="sub" style="margin:0" data-live="storyLeft">${G.formatDuration(h.story.until - s.gameTime)} kaldı</div></div></div>
+    <p>“${st.text}”</p>
+    <div><span class="chip ${met ? 'good' : 'bad'}">${met ? '✓' : '✗'} ${req}</span></div>
+    <p class="sub" style="margin:0">Ödül: ${reward} · kiracının memnuniyeti kalıcı +${CONFIG.storySatBonus}</p>
+    <button type="button" class="btn coin" data-act="story" ${met ? '' : 'disabled'}>${btn}</button>
+  </div>`;
+}
+
 // Binanın piyasa değeri: alış fiyatına göre ne kadar değerlendi
 function valueLine(b) {
   const v = G.marketValue(s, b);
@@ -576,7 +608,7 @@ function openHouse(id) {
     sig: () => {
       const st = G.houseStatus(s, h);
       const met = h.contract ? G.demandMet(s, h, h.contract.demand) : '';
-      return `${st}|${h.x},${h.y}|${s.version}|${met}|${Math.floor(s.money / 50)}|${s.level}|${s.diamonds}|${h.contract ? G.rushCost(s, h) : ''}`;
+      return `${st}|${h.x},${h.y}|${s.version}|${met}|${Math.floor(s.money / 50)}|${s.level}|${s.diamonds}|${h.contract ? G.rushCost(s, h) : ''}|${h.story?.id}|${G.storyMet(s, h)}`;
     },
     render: () => {
       const st = G.houseStatus(s, h);
@@ -615,18 +647,20 @@ function openHouse(id) {
             <p class="sub" style="margin:0">Toplanmayan her saat memnuniyet ${CONFIG.satLatePerHour} puan düşer. Kira kaybolmaz.</p>`;
         }
       }
+      html += storyCard(h);
       html += valueLine(h);
       html += `<div class="btns"><button type="button" class="btn" data-act="move">Taşı (bedava)</button>${sellButton(h)}</div>`;
       return html;
     },
     live: () => {
-      if (!h.contract) return {};
+      if (!h.contract) return h.story ? { storyLeft: `${G.formatDuration(h.story.until - s.gameTime)} kaldı` } : {};
       const sat = G.satisfaction(s, h);
       return {
         left: `${G.formatDuration(h.contract.end - s.gameTime)} kaldı`,
         sat: String(sat),
         satbar: `${sat}%`,
         rush: String(G.rushCost(s, h)),
+        storyLeft: h.story ? `${G.formatDuration(h.story.until - s.gameTime)} kaldı` : '',
       };
     },
     actions: {
@@ -637,6 +671,7 @@ function openHouse(id) {
       decline: () => { G.declineRenewal(s, id); G.generateCards(s, h); panel.sigValue = ''; },
       collect: () => result(G.collectRent(s, id)),
       rush: () => { if (result(G.rushContract(s, id), 'Kontrat bitti, kira hazır.')) save(); },
+      story: () => { if (result(G.completeStory(s, id))) { panel.sigValue = ''; save(); } },
       move: () => startPlacement(h.type, id),
       sell: sellAction(id),
     },
@@ -686,7 +721,8 @@ function openBuild() {
         const items = Object.entries(BUILDINGS).filter(([, d]) => d.cat === cat);
         html += `<div class="cat-title"><h3>${info.name}</h3><small>${info.hint}</small></div><div class="blist">`;
         for (const [type, d] of items) {
-          const locked = d.unlock > s.level;
+          const rareLocked = d.rare && !s.rareUnlocked.includes(type);
+          const locked = d.unlock > s.level || rareLocked;
           const cost = G.buildCost(s, type);
           const poor = cost > s.money;
           const detail = d.cat === 'konut'
@@ -694,7 +730,7 @@ function openBuild() {
             : [d.incomePerHour ? `Saatte ${d.incomePerHour} gelir` : '', effectText(type)].filter(Boolean).join(' · ');
           html += `<button type="button" class="bitem ${locked ? 'locked' : ''} ${poor ? 'poor' : ''}" data-act="pick" data-type="${type}">
             <span class="bi">${d.icon}<img src="img/binalar/${type}.png" alt="" onerror="this.remove()"></span><span class="bn">${d.name}</span>
-            <span class="bc">${locked ? `🔒 Seviye ${d.unlock}` : `${G.formatMoney(cost)} 🪙`}</span>
+            <span class="bc">${rareLocked ? '📜 Hikayeyle açılır' : locked ? `🔒 Seviye ${d.unlock}` : `${G.formatMoney(cost)} 🪙`}</span>
             <span class="be">${detail}</span></button>`;
         }
         html += '</div>';
@@ -704,6 +740,7 @@ function openBuild() {
     actions: {
       pick: ds => {
         const d = BUILDINGS[ds.type];
+        if (d.rare && !s.rareUnlocked.includes(ds.type)) return toast(`${d.name} nadir bir süsleme: memnun bir kiracının isteğini yerine getirince açılır.`, true);
         if (d.unlock > s.level) return toast(`${d.name} seviye ${d.unlock}'te açılır.`, true);
         if (G.buildCost(s, ds.type) > s.money) return toast('Yeterli para yok.', true);
         startPlacement(ds.type);
@@ -847,7 +884,8 @@ function helpHtml() {
     <li>Geç kalırsan kira kaybolmaz ama kiracının memnuniyeti düşer.</li>
     <li>Kafe, park, okul gibi binalar çevresine <b>etki alanı</b> yayar. Atölye çok kazandırır ama çevresini kötüleştirir.</li>
     <li>Binaları istediğin an <b>bedava taşı</b>. İyi yerleşim = daha çok kira.</li>
-    <li>Kilitli arsaya dokunarak yeni yer aç.</li></ul>`;
+    <li>Kilitli arsaya dokunarak yeni yer aç.</li>
+    <li>Memnun kalıp kontratını yenileyen kiracı bazen <b>📜 istekte bulunur</b>. Yerine getirirsen nadir bir süsleme açılır.</li></ul>`;
 }
 
 function openLevel() {
@@ -899,6 +937,16 @@ function showAway(sum) {
       if (total) toast(`+${G.formatMoney(total)} 🪙 toplandı`);
     },
   });
+}
+
+function showRareUnlocked(type) {
+  const d = BUILDINGS[type];
+  buzz(40);
+  showModal(`<div class="rare-img"><img src="img/binalar/${type}.png" alt=""></div>
+    <div class="big-num" style="color:var(--accent);text-align:center">Nadir süsleme açıldı!</div>
+    <p style="text-align:center"><b>${d.icon} ${d.name}</b> artık İnşa et → Süsleme bölümünde.</p>
+    <p class="sub" style="margin:0;text-align:center">${effectText(type)}</p>
+    <button type="button" class="btn primary" data-act="ok">Harika</button>`, {});
 }
 
 function showLevelUp(level, reward, diamonds = 0) {

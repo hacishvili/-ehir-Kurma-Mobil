@@ -154,3 +154,11 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 - Net değer artık binaların satış değeri + arsalar (endeksle).
 - Ekran: Mahalle menüsünün başında piyasa kartı (endeks, yön, grafik, bileşenler, olay); her mahallenin yanında endeksi; bina panelinde piyasa değeri ve alış; İnşa menüsünde endeks notu.
 - 3 yeni test (toplam 31).
+
+## 2026-11-23 — Kiracı hikayeleri
+
+- Aynı kiracı memnun kalıp kontratını yenileyince (ikinci memnun toplamada, %60 şansla) özel bir istek getirir (`STORIES`, `js/data.js`). 48 oyun saati süre.
+- İstek türleri: yakında belirli bina (near), para desteği (pay), konum bonusu en az % (bonus). 7 hikaye: evlilik, iş kurma, bebek, torunlar, sergi, mezuniyet, basın toplantısı.
+- Ödül: nadir süsleme açılır (+ elmas/para), kiracının memnuniyeti kalıcı +15. Kiracı ayrılırsa hikaye kapanır.
+- 4 nadir süsleme (Claude üretti, 4 kredi): Asırlık Çınar, Nilüferli Havuz, Antika Sokak Saati, Gül Bahçesi. Yalnız hikayeyle açılır (`rare: true`, `s.rareUnlocked`); İnşa menüsünde "📜 Hikayeyle açılır".
+- Ekran: haritada evin yanında 📜 balonu, ev panelinde istek kartı, açılınca kutlama penceresi, Nasıl oynanır'a madde. 2 yeni test (toplam 33).

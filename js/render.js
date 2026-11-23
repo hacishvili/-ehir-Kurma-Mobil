@@ -405,6 +405,12 @@ export function createRenderer(canvas) {
         bubble(sx, top, sprites[`kiraci-${c.tenant}`] || TENANTS[c.tenant].icon, p, satColor(G.satisfaction(s, b)));
       } else if (st === 'yenileme') bubble(sx, top, '🔁', null, null, '#e6f6ff');
       else bubble(sx, top, '🔑', null, null, '#ffffff');
+      // kiracının özel isteği
+      if (b.story) {
+        ctx.save(); ctx.translate(sx + 16 * Math.max(0.8, cam.z), top - 6 * cam.z); ctx.scale(pulse * 0.85, pulse * 0.85);
+        bubble(0, 0, '📜', null, null, '#ffe7b8');
+        ctx.restore();
+      }
     } else if (G.hasIncome(b)) {
       if (!G.isConnected(s, b)) bubble(sx, top, '⚠️', null, null, '#fff3cd');
       else if (G.isCollectable(s, b)) {

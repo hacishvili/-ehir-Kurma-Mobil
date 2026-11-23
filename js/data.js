@@ -59,6 +59,12 @@ export const CONFIG = {
     historyLength: 28,
   },
 
+  // Kiracı hikayeleri
+  storyAfterRenewals: 2,   // aynı kiracı 2 kez yenileyince
+  storyChance: 0.6,        // memnun toplamada bu şansla hikaye başlar
+  storyHours: 48,          // isteği karşılamak için süre (oyun saati)
+  storySatBonus: 15,       // tamamlanınca kiracının memnuniyetine kalıcı ek
+
   // Koleksiyon: kira toplarken düşen parçalar; set tamamlanınca kalıcı kira bonusu
   collectionDropChance: 0.12,
   collectionSetBonus: 2, // her tamamlanan set kiraya kalıcı +%2
@@ -193,6 +199,25 @@ export const BUILDINGS = {
     effect: { radius: 2, all: 5, tenants: { sanatci: 6, unlu: 4 } },
   },
 
+  // ---- Nadir süslemeler: yalnız kiracı hikayesi tamamlanınca açılır (rare: true) ----
+  'nadir-cinar': {
+    name: 'Asırlık Çınar', cat: 'dekor', icon: '🌳', cost: 900, unlock: 1, height: 30, rare: true,
+    effect: { radius: 2, all: 8, tenants: { emekli: 6, sanatci: 4 } },
+  },
+  'nadir-havuz': {
+    name: 'Nilüferli Havuz', cat: 'dekor', icon: '🪷', cost: 1200, unlock: 1, height: 4, rare: true,
+    sparkle: { h: 3, spread: 0.2 },
+    effect: { radius: 2, all: 9, tenants: { aile: 6, unlu: 6 } },
+  },
+  'nadir-saat': {
+    name: 'Antika Sokak Saati', cat: 'dekor', icon: '🕰️', cost: 1000, unlock: 1, height: 26, rare: true,
+    effect: { radius: 2, all: 7, tenants: { genc: 8 } },
+  },
+  'nadir-gul': {
+    name: 'Gül Bahçesi', cat: 'dekor', icon: '🌹', cost: 1100, unlock: 1, height: 14, rare: true,
+    effect: { radius: 2, all: 8, tenants: { aile: 4, genc: 4, unlu: 4 } },
+  },
+
   gokdelen: {
     name: 'Gökdelen', cat: 'simge', icon: '🗼', cost: 20000, unlock: 16,
     height: 80,
@@ -314,6 +339,26 @@ export const MARKET_EVENTS = [
   { id: 'sel', text: 'Nehir taştı, sel uyarısı', effect: -10, hours: 36, hoods: ['eski'] },
   { id: 'kirlilik', text: 'Hava kirliliği şikayetleri arttı', effect: -8, hours: 36, hoods: ['sanayi', 'is'] },
   { id: 'yol', text: 'Uzun süren yol çalışması', effect: -6, hours: 24 },
+];
+
+// Kiracı hikayeleri: aynı kiracı en az storyAfterRenewals kez memnun yeniler ise bir istek getirir.
+// request: near (evin yakınında şu binalardan biri olsun), pay (para), bonus (evin konum bonusu en az ...)
+// reward: unlock (nadir süsleme açar), money, diamonds
+export const STORIES = [
+  { id: 'dugun', tenants: ['genc'], title: 'Evleniyoruz!', text: 'Düğünü bahçede yapmak istiyoruz. Masrafına ortak olur musun?',
+    request: { kind: 'pay', amount: 1500 }, reward: { unlock: 'nadir-gul', diamonds: 2 } },
+  { id: 'is', tenants: ['genc', 'sanatci'], title: 'Kendi işimi kuruyorum', text: 'Yakınlarda bir market ya da banka olursa işim çok kolaylaşır.',
+    request: { kind: 'near', types: ['market', 'banka'] }, reward: { unlock: 'nadir-saat', diamonds: 2 } },
+  { id: 'bebek', tenants: ['aile'], title: 'Bebeğimiz oldu!', text: 'Çocuğumuz büyüyünce oynayacağı bir yer olsun: yakına bir oyun parkı ya da okul.',
+    request: { kind: 'near', types: ['dekor-oyun', 'okul'] }, reward: { unlock: 'nadir-havuz', diamonds: 2 } },
+  { id: 'torun', tenants: ['emekli'], title: 'Torunlar geliyor', text: 'Torunlarımla yürüyüş yapacağım bir park olsun, gölgesinde oturalım.',
+    request: { kind: 'near', types: ['park', 'dekor-kamelya'] }, reward: { unlock: 'nadir-cinar', diamonds: 2 } },
+  { id: 'sergi', tenants: ['sanatci'], title: 'İlk sergim', text: 'Sergiyi mahallede açmak istiyorum. Evin çevresi güzel olsun (konum bonusu en az %15).',
+    request: { kind: 'bonus', min: 15 }, reward: { unlock: 'nadir-cinar', money: 800 } },
+  { id: 'mezun', tenants: ['ogrenci'], title: 'Mezun oldum!', text: 'Mezuniyet partisi için biraz destek olur musun?',
+    request: { kind: 'pay', amount: 400 }, reward: { diamonds: 3, money: 0 } },
+  { id: 'basin', tenants: ['unlu'], title: 'Basın toplantısı', text: 'Fotoğraflarda arkada bir simge yapı görünsün: saat kulesi ya da gökdelen.',
+    request: { kind: 'near', types: ['saatkulesi', 'gokdelen'] }, reward: { unlock: 'nadir-gul', diamonds: 5 } },
 ];
 
 export const COLLECTION = {

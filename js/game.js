@@ -1,5 +1,5 @@
 // Oyun mantığı. Ekran çizimi ve dokunma burada yok; böylece testler tarayıcısız çalışır.
-import { CONFIG, BUILDINGS, TENANTS, QUESTS, TERRAIN, COLLECTION, HOODS, TALL, MARKET_EVENTS } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, QUESTS, TERRAIN, COLLECTION, HOODS, TALL, MARKET_EVENTS, STORIES } from './data.js';
 
 export const MIN = 60 * 1000;
 export const HOUR = 60 * MIN;
@@ -41,6 +41,8 @@ export function hydrate(s) {
   for (const k of Object.keys(COLLECTION)) s.collection[k] = s.collection[k] || 0;
   if (s.collectionSets === undefined) s.collectionSets = 0;
   if (!s.hood) { s.hood = 'eski'; s.hoodsOpen = ['eski']; s.hoods = {}; }
+  if (!s.rareUnlocked) s.rareUnlocked = [];
+  if (!s.stats.storiesDone) s.stats.storiesDone = 0;
   if (!s.market) s.market = { nextEventAt: s.gameTime + CONFIG.market.eventEveryHours * HOUR / 2, nextHistAt: s.gameTime, hoods: {} };
   for (const id of s.hoodsOpen) ensureMarket(s, id);
   setActiveHood(s.hood);
@@ -388,6 +390,9 @@ export function signContract(s, houseId, cardIndex) {
   const q = quoteCard(s, h, card, renewing && card.waiveFee);
   if (s.money < q.fee) return fail('İmza ücreti için yeterli para yok.');
   s.money -= q.fee;
+  // aynı kiracının kaçıncı yenilemesi (hikayeler için)
+  if (renewing && h.tenure?.tenant === card.tenant) h.tenure.renewals++;
+  else { h.tenure = { tenant: card.tenant, renewals: 0 }; h.story = null; }
   h.contract = {
     tenant: card.tenant,
     minutes: card.minutes,
@@ -411,6 +416,7 @@ export function satisfaction(s, h) {
   let v = CONFIG.satBase + (demandMet(s, h, c.demand) ? CONFIG.satDemandMet : CONFIG.satDemandMissed);
   const dislikes = TENANTS[c.tenant].dislikes;
   if (dislikes.some(type => affectedByType(s, h.x, h.y, type))) v += CONFIG.satDislikeNearby;
+  if (h.storyBonus && h.tenure?.tenant === c.tenant) v += h.storyBonus;
   const lateHours = Math.max(0, s.gameTime - c.end) / HOUR;
   v -= lateHours * CONFIG.satLatePerHour;
   return clamp(Math.round(v), 0, 100);
@@ -451,12 +457,76 @@ export function collectRent(s, houseId, rng = Math.random) {
   h.contract = null;
   if (sat > 0) {
     h.renewal = { tenant: c.tenant, minutes: c.minutes, demand: c.demand, waiveFee: sat >= CONFIG.satHappy };
+    maybeStartStory(s, h, sat, rng);
   } else {
     h.renewal = null;
+    h.tenure = null;
+    h.story = null;
+    h.storyBonus = 0;
     emit(s, 'tenantLeft', { id: h.id, x: h.x, y: h.y });
   }
   emit(s, 'collected', { id: h.id, x: h.x, y: h.y, amount, xp: c.xp });
   return ok({ amount, left: sat <= 0 });
+}
+
+// ---------- Kiracı hikayeleri ----------
+
+function maybeStartStory(s, h, sat, rng) {
+  if (h.story || !h.tenure || h.tenure.renewals < CONFIG.storyAfterRenewals - 1) return;
+  if (sat < CONFIG.satHappy || rng() >= CONFIG.storyChance) return;
+  const pool = STORIES.filter(st => st.tenants.includes(h.tenure.tenant));
+  if (!pool.length) return;
+  // açılmamış ödülü olan hikayeler önce
+  const fresh = pool.filter(st => !st.reward.unlock || !s.rareUnlocked.includes(st.reward.unlock));
+  const list = fresh.length ? fresh : pool;
+  const st = list[Math.floor(rng() * list.length) % list.length];
+  h.story = { id: st.id, until: s.gameTime + CONFIG.storyHours * HOUR };
+  emit(s, 'storyStarted', { id: h.id, x: h.x, y: h.y, title: st.title });
+}
+
+export function storyOf(s, h) {
+  if (!h?.story) return null;
+  return STORIES.find(st => st.id === h.story.id) || null;
+}
+
+// İstek karşılanıyor mu
+export function storyMet(s, h) {
+  const st = storyOf(s, h);
+  if (!st) return false;
+  const r = st.request;
+  if (r.kind === 'pay') return s.money >= r.amount;
+  if (r.kind === 'near') return r.types.some(type => affectedByType(s, h.x, h.y, type));
+  if (r.kind === 'bonus') return bonusAt(s, h.x, h.y).total >= r.min;
+  return false;
+}
+
+export function completeStory(s, houseId) {
+  const h = s.buildings[houseId];
+  const st = storyOf(s, h);
+  if (!st) return fail('Bu evde bir istek yok.');
+  if (s.gameTime > h.story.until) { h.story = null; return fail('İsteğin süresi doldu.'); }
+  if (!storyMet(s, h)) return fail('İstek henüz karşılanmadı.');
+  if (st.request.kind === 'pay') s.money -= st.request.amount;
+  const rw = st.reward;
+  if (rw.unlock && !s.rareUnlocked.includes(rw.unlock)) s.rareUnlocked.push(rw.unlock);
+  s.money += rw.money || 0;
+  s.diamonds += rw.diamonds || 0;
+  h.story = null;
+  h.storyBonus = CONFIG.storySatBonus;
+  s.stats.storiesDone++;
+  addXp(s, 30);
+  emit(s, 'storyDone', { id: h.id, x: h.x, y: h.y, unlock: rw.unlock || null });
+  return ok({ reward: rw });
+}
+
+// Süresi geçen hikayeler kendiliğinden kapanır (advance içinde)
+function expireStories(s) {
+  for (const h of Object.values(s.buildings)) {
+    if (h.story && s.gameTime > h.story.until) {
+      h.story = null;
+      emit(s, 'storyExpired', { id: h.id });
+    }
+  }
 }
 
 // ---------- Elmas ----------
@@ -494,7 +564,7 @@ export function completeSet(s) {
 
 export function declineRenewal(s, houseId) {
   const h = s.buildings[houseId];
-  if (h) h.renewal = null;
+  if (h) { h.renewal = null; h.tenure = null; h.story = null; h.storyBonus = 0; }
 }
 
 // ---------- Ticari gelir ----------
@@ -560,6 +630,7 @@ export function advance(s, realMs, rng = Math.random) {
   s.gameTime += dt;
   accrueIncome(s, dt);
   marketTick(s, dt, rng);
+  expireStories(s);
 }
 
 // Görüntülenen mahallede ticari gelir biriktir (diğer mahalleler geçişte hesaplanır)
@@ -630,6 +701,7 @@ export function build(s, type, x, y) {
   const d = def(type);
   if (!d) return fail('Bilinmeyen bina.');
   if (d.unlock > s.level) return fail(`Seviye ${d.unlock} gerekli.`);
+  if (d.rare && !s.rareUnlocked.includes(type)) return fail('Bu nadir süsleme bir kiracı hikayesiyle açılır.');
   const p = canPlace(s, x, y, null, sizeOf(type));
   if (!p.ok) return p;
   const cost = buildCost(s, type);

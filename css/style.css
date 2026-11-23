@@ -284,3 +284,9 @@ h3 { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin
 .spark-base { stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
 .news { background: #e9f6ee; border-radius: 10px; padding: 7px 10px; font-size: 13px; }
 .news.bad { background: #fbe9e7; }
+
+.story { background: #fff8ea; border-radius: 16px; padding: 12px; display: grid; gap: 8px; box-shadow: 0 0 0 1.5px #f3dfb5, 0 3px 0 #f3dfb5; }
+.story p { margin: 0; line-height: 1.45; }
+.story-t { font-family: var(--font-display); font-weight: 800; font-size: 17px; }
+.rare-img { display: grid; place-items: center; }
+.rare-img img { width: 180px; height: auto; filter: drop-shadow(0 8px 14px rgba(0,0,0,.2)); }
