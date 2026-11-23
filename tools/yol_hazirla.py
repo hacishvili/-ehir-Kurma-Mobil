@@ -29,13 +29,26 @@ BAND = 0.6  # yol bandı (kenar taşları dahil) karenin bu kadarı; ana caddeni
 NORTH, EAST, SOUTH, WEST = 1, 2, 4, 8
 
 
-def load_straight(path):
-    """Düz yolu N×N'e küçültür; yolun sol ve sağ kenarını (sütun) ve kenar taşı genişliğini bulur."""
-    im = Image.open(path).convert('RGB').resize((N, N), Image.LANCZOS)
-    a = np.asarray(im).astype(np.float32)
+def background(a):
+    """Yol dışı: pembe (#FF00FF ve tonları) ya da beyaz/krem zemin."""
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
     magenta = (r > 140) & (b > 90) & (g < 0.6 * r) & (g < 0.75 * b)
-    road_cols = np.where((~magenta[N // 4: 3 * N // 4]).mean(0) > 0.9)[0]
+    white = a.min(-1) > 236
+    return magenta | white
+
+
+def load_straight(path):
+    """Düz yolu N×N'e küçültür; yolun sol ve sağ kenarını (sütun) bulur.
+    Görselin üstünde/altında boşluk varsa (yol kenara değmiyorsa) yalnız yolun olduğu satırlar alınır."""
+    full = np.asarray(Image.open(path).convert('RGB')).astype(np.float32)
+    h, w = full.shape[:2]
+    bg = background(full)
+    cols = np.where((~bg[h // 4: 3 * h // 4]).mean(0) > 0.9)[0]
+    rows = np.where((~bg[:, cols.min():cols.max() + 1]).mean(1) > 0.97)[0]
+    full = full[rows.min():rows.max() + 1]
+    im = Image.fromarray(full.astype(np.uint8)).resize((N, N), Image.LANCZOS)
+    a = np.asarray(im).astype(np.float32)
+    road_cols = np.where((~background(a)[N // 4: 3 * N // 4]).mean(0) > 0.9)[0]
     left, right = int(road_cols.min()), int(road_cols.max())
     a = make_tileable(a)
     return a, left, right
@@ -191,7 +204,8 @@ def build(a, left, right, mask):
 def estimate_curb(a, left, right):
     """Kenar taşı genişliği: kenardan içeri, renk yolun ortasındakine yaklaşana kadar."""
     prof = a[N // 4: 3 * N // 4].mean(0)
-    mid = prof[(left + right) // 2 - 4:(left + right) // 2 + 4].mean(0)
+    bw = right - left
+    mid = np.median(prof[left + int(bw * 0.3): right - int(bw * 0.3)], axis=0)  # orta çizgiye takılmasın
     c = 0
     for i in range(left, (left + right) // 2):
         if np.abs(prof[i] - mid).mean() < 22:
@@ -201,6 +215,49 @@ def estimate_curb(a, left, right):
         if i - left > (right - left) * 0.3:
             break
     return max(3, min(c, int((right - left) * 0.3)))
+
+
+# Köprü görselleri: (kaynak, köprü yolunun yüzeyi kaynakta hangi sütunlar arasında, 1024 genişlikte).
+# Köprü, yüzeyi karadaki parçanın yüzeyiyle aynı genişlikte olacak şekilde ölçeklenir; korkuluklar
+# bandın dışına, suyun üstüne taşar.
+BRIDGES = {
+    'cadde': ('cadde-kopru.png', (360, 660)),
+    'yol': ('yol-kopru.png', (380, 650)),
+    'yol-tas': ('yol-tas-kopru.png', (410, 620)),
+}
+
+
+def make_bridge(kind, land, left, right):
+    name, (s0, s1) = BRIDGES[kind]
+    path = SRC / name
+    if not path.exists():
+        return False
+    full = np.asarray(Image.open(path).convert('RGB')).astype(np.float32)
+    h, w = full.shape[:2]
+    bg = background(full)
+    cols = np.where((~bg[h // 4: 3 * h // 4]).mean(0) > 0.5)[0]
+    rows = np.where((~bg[:, (s0 + s1) // 2 * w // 1024]))[0]
+    full = full[rows.min():rows.max() + 1]
+    curb = estimate_curb(land, left, right)
+    target = (right - curb) - (left + curb) + 1  # karadaki yol yüzeyi (piksel)
+    scale = target / ((s1 - s0) * w / 1024)
+    nw = int(round(w * scale))
+    im = Image.fromarray(full.astype(np.uint8)).resize((nw, N), Image.LANCZOS)
+    a = make_tileable(np.asarray(im).astype(np.float32)) if nw == N else np.asarray(im).astype(np.float32)
+    # yüzeyin ortası karenin ortasına gelsin
+    centre = (s0 + s1) / 2 * w / 1024 * scale
+    off = int(round(N / 2 - centre))
+    out = np.zeros((N, N, 4), np.float32)
+    for x in range(N):
+        sx = x - off
+        if 0 <= sx < nw:
+            out[:, x, :3] = a[:, sx]
+    keep = ~background(out[..., :3])
+    lo, hi = cols.min() * scale + off, cols.max() * scale + off
+    xs = np.arange(N)[None, :]
+    out[..., 3] = np.where(keep & (xs >= lo) & (xs <= hi), 255, 0)
+    Image.fromarray(out.astype(np.uint8), 'RGBA').save(OUT / f'{kind}-kopru.png', optimize=True)
+    return True
 
 
 def main():
@@ -213,7 +270,8 @@ def main():
             rgb, alpha = build(a, left, right, mask)
             out = np.dstack([np.clip(rgb, 0, 255), alpha * 255]).astype(np.uint8)
             Image.fromarray(out, 'RGBA').save(OUT / f'{kind}-{mask}.png', optimize=True)
-        print(f'{kind}: yol {left}-{right} / {N}, kenar taşı {estimate_curb(a, left, right)} px, 16 parça')
+        bridge = make_bridge(kind, a, left, right) if kind in BRIDGES else False
+        print(f'{kind}: yol {left}-{right} / {N}, kenar taşı {estimate_curb(a, left, right)} px, 16 parça' + (', köprü' if bridge else ''))
 
 
 if __name__ == '__main__':
