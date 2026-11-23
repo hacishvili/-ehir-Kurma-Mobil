@@ -647,14 +647,14 @@ export const HOODS = {
 export const TALL = ['gokdelen', 'rezidans', 'saatkulesi'];
 
 export const CATEGORIES = {
-  konut: { name: 'Konut', hint: 'Kiracı alır, kira getirir' },
-  ticari: { name: 'Ticari', hint: 'Kendi geliri + çevreye kira bonusu' },
-  kamu: { name: 'Kamu ve yeşil', hint: 'Gelir yok, çevreye güçlü bonus' },
-  sanayi: { name: 'Sanayi', hint: 'Yüksek gelir, çevreye olumsuz etki' },
-  simge: { name: 'Simge yapı', hint: 'Pahalı ve nadir; çok geniş alana bonus' },
-  dekor: { name: 'Süsleme', hint: 'Ucuz; yakın evlere küçük bonus' },
-  hammadde: { name: 'Hammadde', hint: 'Depoya mal üretir: odun, kum, buğday, kömür, demir, petrol' },
-  isleme: { name: 'Sanayi Üretimi', hint: 'Hammaddeyi değerli mala çevirir: kereste, çimento, cam, çelik ...' },
+  konut: { icon: '🏠', name: 'Konut', hint: 'Kiracı alır, kira getirir' },
+  ticari: { icon: '🏪', name: 'Ticari', hint: 'Kendi geliri + çevreye kira bonusu' },
+  kamu: { icon: '🌳', name: 'Kamu ve yeşil', hint: 'Gelir yok, çevreye güçlü bonus' },
+  sanayi: { icon: '🏭', name: 'Sanayi', hint: 'Yüksek gelir, çevreye olumsuz etki' },
+  simge: { icon: '🏛️', name: 'Simge yapı', hint: 'Pahalı ve nadir; çok geniş alana bonus' },
+  dekor: { icon: '⛲', name: 'Süsleme', hint: 'Ucuz; yakın evlere küçük bonus' },
+  hammadde: { icon: '⛏️', name: 'Hammadde', hint: 'Depoya mal üretir: odun, kum, buğday, kömür, demir, petrol' },
+  isleme: { icon: '⚙️', name: 'Sanayi Üretimi', hint: 'Hammaddeyi değerli mala çevirir: kereste, çimento, cam, çelik ...' },
 };
 
 // durations dakika cinsinden. Portre görseli: img/ui/kiraci-<id>.png. unlock: hangi seviyede gelmeye başlar

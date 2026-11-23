@@ -14,8 +14,10 @@ const AMB = createAmbient(R);
 const PREF_KEY = 'emlak-sehri-ayar-v1';
 const view = { selectedId: null, placement: null, floaters: [] };
 let s = null;
-let mode = 'normal'; // normal | place | road
+let mode = 'normal'; // normal | place | road | demolish
 let roadErase = false;
+const demolishSel = new Set(); // toplu yıkımda seçilen yapılar
+let buildCat = null; // inşa listesinde açık bölüm (null = bölümler)
 let roadType = 'yol';
 let panel = null;
 let lastWall = Date.now();
@@ -275,6 +277,13 @@ function onDown(e) {
     if (roadErase) paintRoad(tx, ty, true);
     return;
   }
+  // Toplu yıkım: yapıya dokunmak seçer/bırakır; yapıdan başlayan sürükleme geçtiği yapılara aynısını yapar
+  if (mode === 'demolish' && b) {
+    const add = !demolishSel.has(b.id);
+    gesture = { kind: 'demolish', add, sx: x, sy: y };
+    markDemolish(b.id, add);
+    return;
+  }
   if (mode === 'place' && view.placement && tx === view.placement.x && ty === view.placement.y) {
     gesture = { kind: 'ghost', sx: x, sy: y };
     return;
@@ -318,6 +327,12 @@ function onMove(e) {
     }
     return;
   }
+  if (gesture.kind === 'demolish') {
+    const [tx, ty] = R.screenToTile(x, y);
+    const b = G.buildingAt(s, tx, ty);
+    if (b && demolishSel.has(b.id) !== gesture.add) markDemolish(b.id, gesture.add);
+    return;
+  }
   if (gesture.kind === 'road') {
     const [tx, ty] = R.screenToTile(x, y);
     const key = `${tx},${ty}`;
@@ -338,7 +353,8 @@ function onUp(e) {
     if (mode === 'normal' && R.hitVisitor(gesture.sx, gesture.sy)) { A.play('tap'); openVisitor(); }
     else {
       const [tx, ty] = R.screenToTile(gesture.sx, gesture.sy);
-      if (mode === 'road') paintRoad(tx, ty, true); else onTap(tx, ty);
+      if (mode === 'road') paintRoad(tx, ty, true);
+      else if (mode !== 'demolish') onTap(tx, ty);
     }
   }
   if (pointers.size === 0 || (gesture && gesture.kind === 'pinch')) gesture = null;
@@ -417,9 +433,61 @@ function setMode(m) {
   $('btnRoad').classList.toggle('on', m === 'road');
   $('dock').hidden = m !== 'normal';
   $('placebar').hidden = m === 'normal';
+  $('placeOk').classList.toggle('danger', m === 'demolish');
+  $('placeOk').classList.toggle('primary', m !== 'demolish');
   if (m !== 'place') view.placement = null;
   view.grid = m !== 'normal';
+  demolishSel.clear();
+  view.demolish = m === 'demolish' ? demolishSel : null;
   if (m === 'road') { closeSheet(); view.selectedId = null; updateRoadBar(); }
+  if (m === 'demolish') { closeSheet(); view.selectedId = null; updateDemolishBar(); }
+  syncHistory();
+}
+
+// ---------- Toplu yıkım ----------
+
+function startDemolish() {
+  setMode('demolish');
+}
+
+function markDemolish(id, add) {
+  if (add) demolishSel.add(id); else demolishSel.delete(id);
+  buzz(8);
+  updateDemolishBar();
+}
+
+function updateDemolishBar() {
+  for (const id of [...demolishSel]) if (!s.buildings[id]) demolishSel.delete(id);
+  const n = demolishSel.size;
+  const refund = [...demolishSel].reduce((a, id) => a + G.sellValue(s, s.buildings[id]), 0);
+  $('placeInfo').innerHTML = `<b>🧨 Toplu yıkım</b>
+    <span>${n ? `Seçilen: <b style="font-size:inherit;font-family:inherit">${n}</b> yapı · geri ödeme ${G.formatMoney(refund)} 🪙` : 'Henüz seçim yok.'}</span>
+    <span style="color:var(--muted);font-size:12px">Yıkmak istediğin binalara ve yollara dokun ya da üstlerinden sürükle. Tekrar dokununca seçim kalkar. Boş yerden sürüklersen harita kayar.</span>
+    ${n ? '<div class="road-types"><button type="button" class="chip" id="demolishClear">Seçimi temizle</button></div>' : ''}`;
+  const clr = $('demolishClear');
+  if (clr) clr.onclick = () => { demolishSel.clear(); updateDemolishBar(); };
+  const okBtn = $('placeOk');
+  okBtn.dataset.armed = '';
+  okBtn.textContent = n ? `Yık (${n})` : 'Yık';
+  okBtn.disabled = !n;
+  $('placeCancel').textContent = 'Bitti';
+}
+
+function confirmDemolish() {
+  const okBtn = $('placeOk');
+  if (okBtn.dataset.armed !== '1') {
+    okBtn.dataset.armed = '1';
+    okBtn.textContent = 'Emin misin? Dokun: yık';
+    setTimeout(() => { if (mode === 'demolish' && okBtn.dataset.armed === '1') updateDemolishBar(); }, 3000);
+    return;
+  }
+  const r = G.sellMany(s, [...demolishSel]);
+  if (result(r, `${r.count} yapı yıkıldı: +${G.formatMoney(r.total)} 🪙`)) {
+    demolishSel.clear();
+    updateDemolishBar();
+    buzz(30);
+    save();
+  }
 }
 
 function updateRoadBar() {
@@ -451,7 +519,7 @@ function startPlacement(type, moveId = null) {
     [x, y] = spot;
   }
   view.selectedId = null;
-  view.placement = { type, x, y, moveId, valid: true };
+  view.placement = { type, x, y, moveId, valid: true, flip: moveId ? !!s.buildings[moveId].flip : false };
   setMode('place');
   setPlacement(x, y);
 }
@@ -499,7 +567,9 @@ function updatePlacebar() {
     lines.push(`<span>${effectText(pl.type)}</span>`);
   }
   $('placeInfo').innerHTML = `<b>${d.icon} ${d.name}${pl.moveId ? ' taşınıyor' : ` · ${G.formatMoney(cost)} 🪙`}</b>${lines.join('')}
-    <span style="color:var(--muted);font-size:12px">Başka kareye dokun ya da binayı sürükle.</span>`;
+    <span style="color:var(--muted);font-size:12px">Başka kareye dokun ya da binayı sürükle.</span>
+    <div class="road-types"><button type="button" class="chip" id="placeFlip">↔️ Döndür</button></div>`;
+  $('placeFlip').onclick = () => { pl.flip = !pl.flip; buzz(8); };
   $('placeOk').textContent = pl.moveId ? 'Buraya taşı' : 'Yerleştir';
   $('placeOk').disabled = !pl.valid;
   $('placeCancel').textContent = 'Vazgeç';
@@ -507,11 +577,13 @@ function updatePlacebar() {
 
 function confirmPlacement() {
   if (mode === 'road') { roadErase = false; setMode('normal'); return; }
+  if (mode === 'demolish') { confirmDemolish(); return; }
   const pl = view.placement;
   if (!pl || !pl.valid) return;
   if (pl.moveId) {
     if (!result(G.move(s, pl.moveId, pl.x, pl.y), 'Taşındı.')) return;
     const id = pl.moveId;
+    if (!!s.buildings[id].flip !== pl.flip) G.flip(s, id);
     setMode('normal');
     openBuilding(id);
   } else {
@@ -521,6 +593,7 @@ function confirmPlacement() {
       return;
     }
     if (!result(r)) return;
+    if (pl.flip) G.flip(s, r.id);
     setMode('normal');
     openBuilding(r.id);
     buzz(20);
@@ -530,9 +603,11 @@ function confirmPlacement() {
 
 function cancelPlacement() {
   if (mode === 'road') { roadErase = !roadErase; updateRoadBar(); return; }
+  if (mode === 'demolish') { setMode('normal'); return; }
   const id = view.placement?.moveId;
   setMode('normal');
   if (id) openBuilding(id);
+  else openBuild(buildCat); // yeni bina vazgeçilince listede kalınan bölüme dön
 }
 
 // ---------- Alt kart ----------
@@ -543,12 +618,40 @@ function openSheet(p) {
   $('sheetBody').innerHTML = p.render();
   $('sheet').hidden = false;
   $('sheet').scrollTop = 0;
+  syncHistory();
 }
 
 function closeSheet() {
   panel = null;
   $('sheet').hidden = true;
+  syncHistory();
 }
+
+// ---------- Geri tuşu (telefonun geri tuşu ve Esc) ----------
+// Bir pencere ya da mod açıkken tarayıcı geçmişine tek bir kayıt eklenir; geri tuşu onu tüketir
+// ve oyunda bir adım geri gider. Hiçbir şey açık değilken geri tuşu uygulamadan çıkar.
+let ignorePop = false;
+function somethingOpen() {
+  return !!panel || mode !== 'normal';
+}
+function syncHistory() {
+  const marked = !!(history.state && history.state.emlak);
+  if (somethingOpen() && !marked) history.pushState({ emlak: 1 }, '');
+  else if (!somethingOpen() && marked && !ignorePop) { ignorePop = true; history.back(); }
+}
+function goBack() {
+  if (!$('modal').hidden) return; // açılış ve ödül pencereleri kendi düğmesiyle kapanır
+  if (mode === 'place' || mode === 'demolish') { cancelPlacement(); return; }
+  if (mode === 'road') { roadErase = false; setMode('normal'); return; }
+  if (panel && panel.back) { panel.back(); return; }
+  if (panel) deselect();
+}
+window.addEventListener('popstate', () => {
+  if (ignorePop) { ignorePop = false; syncHistory(); return; }
+  goBack();
+  syncHistory();
+});
+window.addEventListener('keydown', e => { if (e.key === 'Escape') goBack(); });
 
 let lastTick = 0;
 function panelTick() {
@@ -805,7 +908,7 @@ function openBuilding(id, skipVisitor = false) {
       }
       html += upgradeBlock(b);
       html += valueLine(b);
-      html += `<div class="btns"><button type="button" class="btn" data-act="move">Taşı (bedava)</button>${sellButton(b)}</div>`;
+      html += `<div class="btns"><button type="button" class="btn" data-act="move">Taşı (bedava)</button><button type="button" class="btn" data-act="flip">↔️ Döndür</button>${sellButton(b)}</div>`;
       return html;
     },
     live: () => ({
@@ -820,6 +923,7 @@ function openBuilding(id, skipVisitor = false) {
       depo: () => openDepo(),
       collect: () => result(G.collectIncome(s, id)),
       move: () => startPlacement(b.type, id),
+      flip: () => { G.flip(s, id); buzz(8); save(); },
       sell: sellAction(id),
     },
   });
@@ -877,7 +981,7 @@ function openHouse(id) {
       html += storyCard(h);
       html += upgradeBlock(h);
       html += valueLine(h);
-      html += `<div class="btns"><button type="button" class="btn" data-act="move">Taşı (bedava)</button>${sellButton(h)}</div>`;
+      html += `<div class="btns"><button type="button" class="btn" data-act="move">Taşı (bedava)</button><button type="button" class="btn" data-act="flip">↔️ Döndür</button>${sellButton(h)}</div>`;
       return html;
     },
     live: () => {
@@ -902,6 +1006,7 @@ function openHouse(id) {
       upgrade: () => doUpgrade(id),
       story: () => { if (result(G.completeStory(s, id))) { panel.sigValue = ''; save(); } },
       move: () => startPlacement(h.type, id),
+      flip: () => { G.flip(s, id); buzz(8); save(); },
       sell: sellAction(id),
     },
   });
@@ -940,16 +1045,37 @@ function openRoad(id) {
 
 // ---------- İnşa listesi ----------
 
-function openBuild() {
+// Bölümdeki binalar: kaçı açık
+function catCounts(cat) {
+  const items = Object.entries(BUILDINGS).filter(([, d]) => d.cat === cat);
+  const open = items.filter(([type, d]) => d.unlock <= s.level && !(d.rare && !s.rareUnlocked.includes(type)) && !(d.season && d.season !== G.season())).length;
+  return { items, open };
+}
+
+function openBuild(cat = null) {
   view.selectedId = null;
+  buildCat = cat && CATEGORIES[cat] ? cat : null;
   openSheet({
-    sig: () => `${s.level}|${Math.floor(s.money / 25)}|${s.version}|${G.season()}`,
+    sig: () => `${s.level}|${Math.floor(s.money / 25)}|${s.version}|${G.season()}|${buildCat}`,
     render: () => {
-      let html = `<h2>İnşa et · ${G.activeHood(s).name}</h2><p class="sub">Fiyatlar mahalle endeksine göre: %${Math.round(G.marketIndex(s))}. Endeks düşükken inşa et, yükselince değerlensin.</p>`;
-      for (const [cat, info] of Object.entries(CATEGORIES)) {
-        const items = Object.entries(BUILDINGS).filter(([, d]) => d.cat === cat);
-        if (!items.length) continue;
-        html += `<div class="cat-title"><h3>${info.name}</h3><small>${info.hint}</small></div><div class="blist">`;
+      const head = `<p class="sub">Fiyatlar mahalle endeksine göre: %${Math.round(G.marketIndex(s))}. Endeks düşükken inşa et, yükselince değerlensin.</p>`;
+      if (!buildCat) {
+        // bölümler
+        let html = `<h2>İnşa et · ${G.activeHood(s).name}</h2>${head}<div class="catgrid">`;
+        for (const [c, info] of Object.entries(CATEGORIES)) {
+          const { items, open } = catCounts(c);
+          if (!items.length) continue;
+          html += `<button type="button" class="catcard" data-act="cat" data-cat="${c}">
+            <span class="ci">${info.icon || '🏗️'}</span><span class="cn">${info.name}</span>
+            <span class="cc">${open}/${items.length} açık</span><span class="ch">${info.hint}</span></button>`;
+        }
+        html += `</div><button type="button" class="btn danger demolish-btn" data-act="demolish">🧨 Toplu yıkım</button>`;
+        return html;
+      }
+      const info = CATEGORIES[buildCat];
+      const { items } = catCounts(buildCat);
+      let html = `<div class="cat-head"><button type="button" class="back-btn" data-act="back" aria-label="Geri">‹ Geri</button><h2>${info.icon || ''} ${info.name}</h2></div>
+        <p class="sub">${info.hint}</p><div class="blist">`;
         for (const [type, d] of items) {
           const rareLocked = d.rare && !s.rareUnlocked.includes(type);
           const seasonLocked = d.season && d.season !== G.season();
@@ -974,10 +1100,13 @@ function openBuild() {
             <span class="be">${detail}</span></button>`;
         }
         html += '</div>';
-      }
       return html;
     },
+    back: () => (buildCat ? openBuild(null) : deselect()),
     actions: {
+      cat: ds => openBuild(ds.cat),
+      back: () => openBuild(null),
+      demolish: () => startDemolish(),
       pick: ds => {
         const d = BUILDINGS[ds.type];
         if (d.rare && !s.rareUnlocked.includes(ds.type)) return toast(`${d.name} nadir bir süsleme: memnun bir kiracının isteğini yerine getirince açılır.`, true);

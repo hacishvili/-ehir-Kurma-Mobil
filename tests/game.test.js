@@ -735,3 +735,25 @@ test('ana cadde karesi kaldırılır ve geri gelir; tepe düzleştirilir', () =>
   assert.equal(G0.terrainAt(2, 15), null);
   assert.equal(s2.money, money - G0.flattenCost());
 });
+
+test('bina döndürülür (kayıtta kalır); toplu yıkım hepsini satar', () => {
+  const s = rich();
+  G.buyParcel(s, 1, 1);
+  const a = G.build(s, 'ev', AX + 1, 5).id;
+  const b = G.build(s, 'ev', AX + 1, 6).id;
+  const r = G.build(s, 'yol', AX + 1, 7).id;
+  assert.ok(G.flip(s, a).ok);
+  assert.equal(s.buildings[a].flip, true);
+  const back = G.deserialize(G.serialize(s));
+  assert.equal(back.buildings[a].flip, true, 'yön kayıtta kalır');
+  G.flip(s, a);
+  assert.equal(!!s.buildings[a].flip, false);
+  const money = s.money;
+  const expect = [a, b, r].reduce((t, id) => t + G.sellValue(s, s.buildings[id]), 0);
+  const res = G.sellMany(s, [a, b, r, 'yok']);
+  assert.ok(res.ok);
+  assert.equal(res.count, 3);
+  assert.ok(!s.buildings[a] && !s.buildings[b] && !s.buildings[r]);
+  assert.ok(s.money >= money + expect);
+  assert.equal(G.sellMany(s, []).ok, false);
+});

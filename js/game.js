@@ -1032,6 +1032,28 @@ export function build(s, type, x, y, rng = Math.random) {
   return ok({ id, cost });
 }
 
+// Binayı aynala (yönünü çevir). Görsel sağa-sola çevrilir; oyun kuralı değişmez.
+export function flip(s, id) {
+  const b = s.buildings[id];
+  if (!b) return fail('Bina bulunamadı.');
+  if (b.flip) delete b.flip; else b.flip = true;
+  changed(s);
+  return ok();
+}
+
+// Birden çok yapıyı birlikte sat/yık. Döndürür: kaç tane, toplam geri ödeme (toplanan kira dahil)
+export function sellMany(s, ids) {
+  let count = 0, total = 0;
+  for (const id of ids) {
+    const r = sell(s, id);
+    if (!r.ok) continue;
+    count++;
+    total += r.refund + (r.collected || 0);
+  }
+  if (!count) return fail('Yıkılacak bir şey seçilmedi.');
+  return ok({ count, total });
+}
+
 export function move(s, id, x, y) {
   const b = s.buildings[id];
   if (!b) return fail('Bina bulunamadı.');

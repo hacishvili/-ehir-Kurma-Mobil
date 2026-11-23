@@ -210,6 +210,24 @@ h3 { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin
 .card .btn { grid-column: 1 / -1; margin-top: 6px; }
 
 /* İnşa listesi */
+.catgrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-top: 8px; }
+.catcard {
+  border: 0; text-align: left; background: #fff; border-radius: 14px; padding: 10px;
+  box-shadow: 0 0 0 1.5px var(--line), 0 3px 0 var(--line);
+  display: grid; grid-template-columns: 38px 1fr; gap: 1px 8px; align-items: center; color: inherit; font: inherit;
+}
+.catcard:active { transform: translateY(2px); box-shadow: 0 0 0 1.5px var(--line), 0 1px 0 var(--line); }
+.catcard .ci { font-size: 28px; grid-row: span 2; text-align: center; }
+.catcard .cn { font-weight: 800; font-size: 15px; }
+.catcard .cc { font-size: 12px; font-weight: 800; color: #8a6400; }
+.catcard .ch { grid-column: 1 / -1; font-size: 11.5px; color: var(--muted); line-height: 1.35; margin-top: 4px; }
+.cat-head { display: flex; align-items: center; gap: 10px; }
+.cat-head h2 { margin: 0; }
+.back-btn {
+  border: 0; background: #fff; border-radius: 12px; padding: 7px 12px; font: inherit; font-weight: 800; font-size: 15px;
+  color: inherit; box-shadow: 0 0 0 1.5px var(--line), 0 2px 0 var(--line); flex: none;
+}
+.demolish-btn { width: 100%; margin-top: 12px; }
 .cat-title { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .cat-title small { color: var(--muted); font-size: 12px; }
 .blist { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }

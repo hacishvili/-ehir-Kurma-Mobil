@@ -279,3 +279,14 @@ Görseller (Claude, ~50 kredi): kaynaklar `img/kaynak/`, doğa ve mevsim ağaçl
 - Sahil: kum ve kıyı kare görselleri yerine render.js drawShore — kum dokusu (kodla), dalgalı tek kıyı çizgisi
   (shoreLine), ıslak kum, sığ su ve köpük. Kare kare görsel testere dişi gibi görünüyordu. Kumdaki yollar da görselle.
 - Ağaçlı bulvar: görseldeki kuşbakışı ağaçlar görünmüyordu; render.js boulevardTrees bulvarın yeşil şeridine (kenardan 0,235) kare başına kenar ortasına ayakta ağaç diker (yaprakli, mevsime göre). Dönemeçte dış yay ortası, yol ucunun kapalı kenarında ağaç yok, köprüde yok.
+
+## İnşa menüsü bölümleri, geri tuşu, döndürme, toplu yıkım
+- İnşa et önce bölümleri gösterir (CATEGORIES'e icon eklendi; "x/y açık"). Bölüme girince "‹ Geri" düğmesi.
+  Yeni bina yerleştirmekten vazgeçince aynı bölüme dönülür (main.js buildCat).
+- Geri tuşu: pencere ya da mod açıkken geçmişe tek kayıt eklenir (syncHistory); geri/Esc → goBack: mod iptal,
+  bölümden bölümlere, pencereyi kapat. Android'de MainActivity OnBackPressedCallback webView.goBack yapar;
+  geçmiş boşsa uygulamadan çıkar.
+- Döndürme: b.flip (game.js flip). Görsel sağa-sola aynalanır (render drawSprite), baca dumanı x/y yer değiştirir.
+  Bina kartında ve yerleştirirken "↔️ Döndür".
+- Toplu yıkım: İnşa et → "🧨 Toplu yıkım" (mode 'demolish'). Dokun/sürükle seç-bırak, yıkılacaklar soluk + kırmızı + ❌.
+  "Yık (n)" iki dokunuşla onaylanır; game.js sellMany (yollar dahil, geri ödeme ve birikmiş kira toplanır).

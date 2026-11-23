@@ -312,7 +312,8 @@ export function createAmbient(R) {
       if (d.smoke && smokeTick && G.isConnected(s, b)) {
         for (const sm of [].concat(d.smoke)) {
           emit({
-            kind: 'smoke', fx: b.x + n / 2 + sm.x, fy: b.y + n / 2 + sm.y, h: sm.h ?? (d.height || 0) + 14,
+            kind: 'smoke', fx: b.x + n / 2 + (b.flip ? sm.y : sm.x), fy: b.y + n / 2 + (b.flip ? sm.x : sm.y), // aynalı binada baca da yer değiştirir
+            h: sm.h ?? (d.height || 0) + 14,
             vx: 0.05, vy: -0.04, vh: 11, life: 0, max: 3.2, r: 2.5 + Math.random(),
           });
         }

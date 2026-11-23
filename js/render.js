@@ -772,7 +772,15 @@ export function createRenderer(canvas) {
       ctx.lineWidth = 2.5;
       poly(diamond(b.x, b.y, 0.04, n).pts, 'rgba(255,255,255,0.25)', '#ffffff');
     }
-    ctx.drawImage(img, sx - w / 2, bottom - h, w, h);
+    if (b.flip) {
+      // döndürülmüş bina: görsel sağa-sola aynalanır (karenin ortası sabit)
+      ctx.save();
+      ctx.translate(sx, 0); ctx.scale(-1, 1);
+      ctx.drawImage(img, -w / 2, bottom - h, w, h);
+      ctx.restore();
+    } else {
+      ctx.drawImage(img, sx - w / 2, bottom - h, w, h);
+    }
     ctx.globalAlpha = 1;
   }
 
@@ -1077,6 +1085,12 @@ export function createRenderer(canvas) {
     drawRoundabouts(s);
     drawParcels(s);
     const nature = natureItems(s, t, !!(amb && amb.enabled), 'inside');
+    // toplu yıkımda seçilen yollar kırmızı
+    const dem = view.demolish;
+    if (dem) for (const id of dem) {
+      const b = s.buildings[id];
+      if (b && G.isRoadType(b.type)) poly(diamond(b.x, b.y, 0.04, G.sizeOf(b.type)).pts, 'rgba(229,83,75,0.55)', '#b3261e');
+    }
 
     const pl = view.placement;
     const sel = view.selectedId ? s.buildings[view.selectedId] : null;
@@ -1088,7 +1102,7 @@ export function createRenderer(canvas) {
     const keyOf = b => { const n = G.sizeOf(b.type); return { key: b.x + b.y + n, kx: b.x + n / 2 }; };
     const items = list.map(b => ({ b, ghost: false, ...keyOf(b) }));
     if (pl && !G.isRoadType(pl.type)) {
-      const g = { id: '_ghost', type: pl.type, x: pl.x, y: pl.y };
+      const g = { id: '_ghost', type: pl.type, x: pl.x, y: pl.y, flip: pl.flip };
       items.push({ b: g, ghost: true, ...keyOf(g) });
     }
     const all = (amb ? items.concat(amb.drawables(s, t)) : items).concat(nature.inside, boulevardTrees(s, t, !!(amb && amb.enabled)));
@@ -1096,6 +1110,18 @@ export function createRenderer(canvas) {
     for (const it of all) {
       if (it.draw) it.draw();
       else if (it.ghost) drawBuilding(it.b, 0.82, true, pl.valid ? null : '#e5534b');
+      else if (dem && dem.has(it.b.id)) {
+        // yıkılacak: soluk bina, üstünde kırmızı alan ve çarpı
+        drawBuilding(it.b, 0.5);
+        const n = G.sizeOf(it.b.type), pts = diamond(it.b.x, it.b.y, 0.04, n).pts;
+        ctx.lineWidth = 2;
+        poly(pts, 'rgba(229,83,75,0.4)', '#b3261e');
+        const [cx, cy] = toScreen(it.b.x + n / 2, it.b.y + n / 2);
+        ctx.font = `${Math.round(22 * cam.z)}px system-ui, "Apple Color Emoji", sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('❌', cx, cy - 18 * cam.z);
+        ctx.lineWidth = 1;
+      }
       else drawBuilding(it.b, 1, sel && sel.id === it.b.id);
     }
 
