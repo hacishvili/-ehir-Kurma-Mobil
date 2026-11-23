@@ -78,7 +78,12 @@ function cache(s) {
   if (c.version === s.version) return c;
   const n = CONFIG.gridSize;
   const grid = Array.from({ length: n }, () => new Array(n).fill(null));
-  for (const b of Object.values(s.buildings)) grid[b.y][b.x] = b;
+  for (const b of Object.values(s.buildings)) {
+    const n = sizeOf(b);
+    for (let dy = 0; dy < n; dy++) for (let dx = 0; dx < n; dx++) {
+      if (inBounds(b.x + dx, b.y + dy)) grid[b.y + dy][b.x + dx] = b;
+    }
+  }
   c.grid = grid;
   c.connected = computeConnected(grid);
   c.bonus = new Map();
@@ -121,13 +126,25 @@ function computeConnected(grid) {
   return { roadOk, dirs };
 }
 
-// Bina, bağlı bir yola komşuysa bağlıdır.
+// Bina, bağlı bir yola komşuysa bağlıdır (büyük binada herhangi bir kenarı yeter).
 export function isConnected(s, b) {
-  const { roadOk, dirs } = cache(s).connected;
-  return dirs.some(([dx, dy]) => {
-    const nx = b.x + dx, ny = b.y + dy;
-    return inBounds(nx, ny) && roadOk[ny][nx];
-  });
+  const { roadOk } = cache(s).connected;
+  return footprintNeighbors(b.x, b.y, sizeOf(b)).some(([nx, ny]) => inBounds(nx, ny) && roadOk[ny][nx]);
+}
+
+// Bir bina alanının çevresindeki kareler (köşeler hariç)
+export function footprintNeighbors(x, y, n) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    out.push([x + i, y - 1], [x + i, y + n], [x - 1, y + i], [x + n, y + i]);
+  }
+  return out;
+}
+
+// Bina kaç kare kaplıyor (kenar uzunluğu): 1 ya da 2
+export function sizeOf(typeOrBuilding) {
+  const type = typeof typeOrBuilding === 'string' ? typeOrBuilding : typeOrBuilding.type;
+  return BUILDINGS[type]?.size || 1;
 }
 
 export function isRoadConnected(s, x, y) {
@@ -144,8 +161,17 @@ export function isHouse(b) {
   return def(b.type).cat === 'konut';
 }
 
+// (x, y) karesi, src binasının alanına radius kare uzaklıkta mı (büyük binada alanın kenarından ölçülür)
 export function inRadius(src, x, y, radius) {
-  return Math.max(Math.abs(src.x - x), Math.abs(src.y - y)) <= radius;
+  const n = src.type ? sizeOf(src) : 1;
+  const dx = x < src.x ? src.x - x : Math.max(0, x - (src.x + n - 1));
+  const dy = y < src.y ? src.y - y : Math.max(0, y - (src.y + n - 1));
+  return Math.max(dx, dy) <= radius;
+}
+
+export function covers(b, x, y) {
+  const n = sizeOf(b);
+  return x >= b.x && y >= b.y && x < b.x + n && y < b.y + n;
 }
 
 // (x, y) karesindeki bir evin konum bonusu (yüzde). tenant verilmezse yalnız herkese uygulanan kısım.
@@ -162,9 +188,9 @@ export function bonusAt(s, x, y, tenant = null, opts = {}) {
   const perType = {};
   for (const b of sources) {
     const e = def(b.type).effect;
-    if (!e || (b.x === x && b.y === y)) continue;
+    if (!e || covers(b, x, y)) continue;
     if (!inRadius(b, x, y, e.radius)) continue;
-    const v = e.all + (tenant ? (e.tenants[tenant] || 0) : 0);
+    const v = e.all + (tenant ? ((e.tenants || {})[tenant] || 0) : 0);
     perType[b.type] = (perType[b.type] || 0) + v;
   }
   const parts = [];
@@ -429,12 +455,17 @@ export function buildCost(s, type) {
   return Math.round(d.cost * Math.pow(CONFIG.buildCostGrowth, countOf(s, type)));
 }
 
-export function canPlace(s, x, y, ignoreId = null) {
-  if (!inBounds(x, y)) return fail('Harita dışı.');
-  if (!isUnlocked(s, x, y)) return fail('Bu arsa henüz açılmadı.');
-  if (isAvenue(x, y)) return fail('Ana caddeye bina yapılamaz.');
-  const b = buildingAt(s, x, y);
-  if (b && b.id !== ignoreId) return fail('Bu kare dolu.');
+export function canPlace(s, x, y, ignoreId = null, size = 1) {
+  for (let dy = 0; dy < size; dy++) {
+    for (let dx = 0; dx < size; dx++) {
+      const tx = x + dx, ty = y + dy;
+      if (!inBounds(tx, ty)) return fail('Harita dışı.');
+      if (!isUnlocked(s, tx, ty)) return fail('Bu arsa henüz açılmadı.');
+      if (isAvenue(tx, ty)) return fail('Ana caddeye bina yapılamaz.');
+      const b = buildingAt(s, tx, ty);
+      if (b && b.id !== ignoreId) return fail(size > 1 ? `Bu bina ${size}×${size} kare ister; yer dolu.` : 'Bu kare dolu.');
+    }
+  }
   return ok();
 }
 
@@ -442,7 +473,7 @@ export function build(s, type, x, y) {
   const d = def(type);
   if (!d) return fail('Bilinmeyen bina.');
   if (d.unlock > s.level) return fail(`Seviye ${d.unlock} gerekli.`);
-  const p = canPlace(s, x, y);
+  const p = canPlace(s, x, y, null, sizeOf(type));
   if (!p.ok) return p;
   const cost = buildCost(s, type);
   if (s.money < cost) return fail('Yeterli para yok.');
@@ -458,7 +489,7 @@ export function build(s, type, x, y) {
 export function move(s, id, x, y) {
   const b = s.buildings[id];
   if (!b) return fail('Bina bulunamadı.');
-  const p = canPlace(s, x, y, id);
+  const p = canPlace(s, x, y, id, sizeOf(b));
   if (!p.ok) return p;
   b.x = x;
   b.y = y;

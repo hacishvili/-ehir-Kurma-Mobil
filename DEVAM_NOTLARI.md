@@ -99,3 +99,12 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 - `docs/Gorsel-Komutlari.pdf`: 37 görsel için komut, oran ve dosya adı. Bölümler: 9 yeni bina (AVM, fabrika, stadyum 2×2), 2 yenileme (atölye, market), 6 zemin (kum, deniz, kıyı, nehir, tepe, beton), 6 süsleme, 6 kiracı portresi, danışman, 3 simge + 3 koleksiyon parçası, uygulama ikonu.
 - Kullanıcı numarayla "hazır" diyecek; Claude Higgsfield geçmişinden komut metnine göre bulup indirecek.
 - Kodda gereken yeni işler: 2×2 bina desteği, zemin kareleri, süslemeler, kiracı portreleri, yeni kiracılar (sanatçı, ünlü), mahalleler, emlak piyasası, elmas, koleksiyon, kiracı hikayeleri, günlük hedefler.
+
+## 2026-11-23 — Görsel listesi 1–14: yeni binalar, 2×2 binalar, zeminler
+
+- Dokuz yeni bina oyunda: rezidans, banka, AVM (2×2), fabrika (2×2), lojistik depo, hastane, saat kulesi, stadyum (2×2), gökdelen. Rakamlar `js/data.js` içinde, ilk tahmin.
+- Yeni kategori: Simge yapı (saat kulesi, stadyum, gökdelen).
+- Büyük bina desteği: `size: 2`. Bina dört kare kaplar; yol bağlantısı ve etki alanı binanın kenarından ölçülür; yerleştirme, taşıma, çizim, duman hepsi buna göre. 3 yeni test (toplam 17).
+- Atölye ve market yeniden üretilmiş görsellerle değişti. Atölye ve fabrika dumanı bacalardan çıkıyor (fabrikada iki baca).
+- Görsel aracı: arka plan rengini kenarların çoğunluğundan buluyor (bankanın köşesinde gri leke vardı), yalnız en büyük parçayı bırakıyor, `img/kaynak/ayarlar.json` ile görsele özel ayar (market: tolerans 40).
+- Zemin kareleri (kum, deniz, kıyı) hazırlandı (`img/binalar/zemin-*.png`) ama henüz kullanılmıyor; Sahil mahallesiyle gelecek.

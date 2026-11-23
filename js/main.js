@@ -313,7 +313,7 @@ function startPlacement(type, moveId = null) {
   let x, y;
   if (moveId) ({ x, y } = s.buildings[moveId]);
   else {
-    const spot = findSpot();
+    const spot = findSpot(type);
     if (!spot) { toast('Boş arsa kalmadı. Kilitli bir parsele dokunup yeni arsa aç.', true); return; }
     [x, y] = spot;
   }
@@ -324,13 +324,14 @@ function startPlacement(type, moveId = null) {
 }
 
 // Ekranın ortasına en yakın, yola bağlanabilen boş kare
-function findSpot() {
+function findSpot(type) {
   const [cx, cy] = R.screenToTile(R.size.W / 2, R.size.H * 0.45);
   let best = null, bestScore = Infinity;
   const n = CONFIG.gridSize;
+  const size = G.sizeOf(type);
   for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    if (!G.canPlace(s, x, y).ok) continue;
-    const roadNext = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => G.inBounds(x + dx, y + dy) && G.isRoadConnected(s, x + dx, y + dy));
+    if (!G.canPlace(s, x, y, null, size).ok) continue;
+    const roadNext = connectedAt(x, y, size);
     const score = Math.hypot(x - cx, y - cy) + (roadNext ? 0 : 6);
     if (score < bestScore) { bestScore = score; best = [x, y]; }
   }
@@ -341,14 +342,14 @@ function setPlacement(tx, ty) {
   const pl = view.placement;
   if (!pl || !G.inBounds(tx, ty)) return;
   pl.x = tx; pl.y = ty;
-  const check = G.canPlace(s, tx, ty, pl.moveId);
+  const check = G.canPlace(s, tx, ty, pl.moveId, G.sizeOf(pl.type));
   pl.valid = check.ok;
   pl.reason = check.msg;
   updatePlacebar();
 }
 
-function connectedAt(x, y) {
-  return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => G.inBounds(x + dx, y + dy) && G.isRoadConnected(s, x + dx, y + dy));
+function connectedAt(x, y, size = 1) {
+  return G.footprintNeighbors(x, y, size).some(([nx, ny]) => G.inBounds(nx, ny) && G.isRoadConnected(s, nx, ny));
 }
 
 function updatePlacebar() {
@@ -357,7 +358,7 @@ function updatePlacebar() {
   const cost = pl.moveId ? 0 : G.buildCost(s, pl.type);
   const lines = [];
   if (!pl.valid) lines.push(`<span style="color:var(--bad);font-weight:800">${pl.reason}</span>`);
-  else if (!connectedAt(pl.x, pl.y)) lines.push(`<span style="color:#a26b00;font-weight:700">⚠️ Burada yola bağlı olmaz. Sonra yanına yol yapabilirsin.</span>`);
+  else if (!connectedAt(pl.x, pl.y, G.sizeOf(pl.type))) lines.push(`<span style="color:#a26b00;font-weight:700">⚠️ Burada yola bağlı olmaz. Sonra yanına yol yapabilirsin.</span>`);
   if (d.cat === 'konut') {
     const v = G.bonusAt(s, pl.x, pl.y, null, { ignoreId: pl.moveId }).total;
     lines.push(`<span>Konum bonusu: <b style="font-size:inherit;font-family:inherit">${pct(v)}</b> · kiracıya göre değişir</span>`);
@@ -454,10 +455,11 @@ function pct(v) {
 function effectText(type) {
   const e = BUILDINGS[type].effect;
   if (!e) return '';
-  const size = e.radius * 2 + 1;
+  const size = e.radius * 2 + G.sizeOf(type);
   const parts = [`Alan ${size}×${size}`];
+  if (G.sizeOf(type) > 1) parts.unshift(`${G.sizeOf(type)}×${G.sizeOf(type)} kare kaplar`);
   if (e.all) parts.push(`herkese ${pct(e.all)}`);
-  const t = Object.entries(e.tenants).map(([id, v]) => `${TENANTS[id].name} ${pct(v)}`);
+  const t = Object.entries(e.tenants || {}).map(([id, v]) => `${TENANTS[id].name} ${pct(v)}`);
   if (t.length) parts.push(t.join(', '));
   return parts.join(' · ');
 }

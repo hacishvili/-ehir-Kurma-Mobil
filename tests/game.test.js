@@ -169,3 +169,39 @@ test('görev zinciri ilerler', () => {
   assert.ok(G.claimQuest(s).ok);
   assert.equal(G.questComplete(s), true); // ev zaten caddeye bağlı
 });
+
+test('2x2 bina dört kare kaplar, kenarından yola bağlanır ve etkisi kenardan ölçülür', () => {
+  const s = rich();
+  s.level = 30;
+  G.buyParcel(s, 2, 1);
+  const r = G.build(s, 'avm', 7, 6); // 7..8 x 6..7
+  assert.ok(r.ok, r.msg);
+  for (const [x, y] of [[7, 6], [8, 6], [7, 7], [8, 7]]) assert.equal(G.buildingAt(s, x, y).id, r.id);
+  assert.equal(G.build(s, 'ev', 8, 7).ok, false, 'dolu kareye bina yapılamaz');
+  assert.equal(G.isConnected(s, s.buildings[r.id]), false);
+  G.build(s, 'yol', 6, 7); // caddeye (x=5) komşu, AVM'nin sol kenarına komşu
+  assert.equal(G.isConnected(s, s.buildings[r.id]), true);
+  // radius 3: alanın sağ kenarı x=8, 3 kare ötesi x=11 etkilenir, 12 harita dışı
+  assert.ok(G.inRadius(s.buildings[r.id], 11, 7, 3));
+  assert.ok(!G.inRadius(s.buildings[r.id], 7, 11, 3));
+  // kendi alanına etki etmez
+  assert.equal(G.bonusAt(s, 8, 7).parts.some(p => p.type === 'avm'), false);
+});
+
+test('2x2 bina kilitli arsaya ya da caddeye taşamaz', () => {
+  const s = rich();
+  s.level = 30;
+  assert.equal(G.build(s, 'avm', 7, 7).ok, false, 'y=8 kilitli parsel');
+  assert.equal(G.build(s, 'avm', 4, 4).ok, false, 'x=5 ana cadde');
+  assert.ok(G.build(s, 'avm', 6, 4).ok);
+  const id = Object.values(s.buildings).find(b => b.type === 'avm').id;
+  assert.equal(G.move(s, id, 7, 7).ok, false);
+});
+
+test('etkisinde kiracı ayrımı olmayan binalar da bonus verir', () => {
+  const s = rich();
+  s.level = 30;
+  G.build(s, 'ev', 6, 6);
+  assert.ok(G.build(s, 'saatkulesi', 4, 4).ok);
+  assert.equal(G.bonusAt(s, 6, 6, 'aile').total, 10);
+});

@@ -206,25 +206,23 @@ export function createAmbient(R) {
     const sparkTick = emitClock % 0.25 < dt;
     for (const b of Object.values(s.buildings)) {
       const d = BUILDINGS[b.type];
+      const n = G.sizeOf(b.type);
       if (d.smoke && smokeTick && G.isConnected(s, b)) {
-        emit({
-          kind: 'smoke', fx: b.x + 0.5 + d.smoke.x, fy: b.y + 0.5 + d.smoke.y, h: chimneyTop(b),
-          vx: 0.05, vy: -0.04, vh: 11, life: 0, max: 3.2, r: 2.5 + Math.random(),
-        });
+        for (const sm of [].concat(d.smoke)) {
+          emit({
+            kind: 'smoke', fx: b.x + n / 2 + sm.x, fy: b.y + n / 2 + sm.y, h: sm.h ?? (d.height || 0) + 14,
+            vx: 0.05, vy: -0.04, vh: 11, life: 0, max: 3.2, r: 2.5 + Math.random(),
+          });
+        }
       }
       if (d.sparkle && sparkTick && Math.random() < 0.7) {
         const sp = d.sparkle.spread;
         emit({
-          kind: 'spark', fx: b.x + 0.5 + (d.sparkle.x || 0) + (Math.random() - 0.5) * sp * 2, fy: b.y + 0.5 + (d.sparkle.y || 0) + (Math.random() - 0.5) * sp * 2,
+          kind: 'spark', fx: b.x + n / 2 + (d.sparkle.x || 0) + (Math.random() - 0.5) * sp * 2, fy: b.y + n / 2 + (d.sparkle.y || 0) + (Math.random() - 0.5) * sp * 2,
           h: d.sparkle.h + Math.random() * 3, vx: 0, vy: 0, vh: 0, life: 0, max: 0.7,
         });
       }
     }
-  }
-
-  function chimneyTop(b) {
-    const d = BUILDINGS[b.type];
-    return d.smoke.h ?? (d.height || 0) + 14;
   }
 
   function burst(x, y, amount) {

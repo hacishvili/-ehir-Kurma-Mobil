@@ -43,8 +43,10 @@ export const CONFIG = {
   speeds: [1, 10, 60],   // test için zaman hızlandırma
 };
 
-// cat: konut | ticari | kamu | sanayi | yol
-// smoke: bacadan duman, sparkle: su parıltısı (görsel süs, oyunu etkilemez)
+// cat: konut | ticari | kamu | sanayi | simge | yol
+// size: kaç kare kapladığı (2 = 2x2). Etki alanı binanın kenarından ölçülür.
+// smoke: bacadan duman (bir ya da birkaç baca), sparkle: su parıltısı (görsel süs, oyunu etkilemez).
+//   x, y: bina alanının merkezinden kayma (kare), h: yükseklik (piksel)
 // effect: { radius, all, tenants: { kiracıId: ek yüzde } } — radius kare tabanlı (radius 1 = 3x3 alan)
 export const BUILDINGS = {
   yol: { name: 'Yol', cat: 'yol', icon: '', cost: 0, unlock: 1 },
@@ -97,8 +99,55 @@ export const BUILDINGS = {
   atolye: {
     name: 'Atölye', cat: 'sanayi', icon: '🏭', cost: 800, unlock: 3,
     incomePerHour: 220, height: 28,
-    smoke: { x: 0.148, y: -0.148, h: 21 }, // baca: kare merkezinden kayma ve yükseklik (img/binalar/atolye.png'ye göre)
+    smoke: { x: 0.234, y: -0.234, h: 35 }, // img/binalar/atolye.png'deki baca
     effect: { radius: 2, all: -8, tenants: { aile: -10, emekli: -12, genc: -4 } },
+  },
+
+  // ---- Sonradan eklenen binalar (rakamlar ilk tahmin) ----
+  rezidans: {
+    name: 'Rezidans', cat: 'konut', icon: '🏙️', cost: 5200, unlock: 9,
+    rentPerHour: 1900, height: 56,
+  },
+  banka: {
+    name: 'Banka', cat: 'ticari', icon: '🏦', cost: 3000, unlock: 8,
+    incomePerHour: 320, height: 24,
+    effect: { radius: 2, all: 6, tenants: { genc: 8 } },
+  },
+  avm: {
+    name: 'AVM', cat: 'ticari', icon: '🛍️', cost: 9000, unlock: 12, size: 2,
+    incomePerHour: 950, height: 22,
+    effect: { radius: 3, all: 10, tenants: { genc: 8, aile: 6, ogrenci: 6 } },
+  },
+  lojistik: {
+    name: 'Lojistik Depo', cat: 'sanayi', icon: '🚚', cost: 3500, unlock: 8,
+    incomePerHour: 620, height: 18,
+    effect: { radius: 2, all: -6, tenants: { aile: -6, emekli: -8 } },
+  },
+  fabrika: {
+    name: 'Fabrika', cat: 'sanayi', icon: '🏗️', cost: 6000, unlock: 10, size: 2,
+    incomePerHour: 1400, height: 30,
+    smoke: [{ x: 0.371, y: -0.371, h: 37 }, { x: -0.023, y: 0.023, h: 37 }], // img/binalar/fabrika.png'deki iki baca
+    effect: { radius: 3, all: -12, tenants: { aile: -10, emekli: -12, genc: -5 } },
+  },
+  hastane: {
+    name: 'Hastane', cat: 'kamu', icon: '🏥', cost: 4000, unlock: 9,
+    height: 34,
+    effect: { radius: 3, all: 4, tenants: { emekli: 20, aile: 8 } },
+  },
+  saatkulesi: {
+    name: 'Saat Kulesi', cat: 'simge', icon: '🕰️', cost: 8000, unlock: 11,
+    height: 60,
+    effect: { radius: 4, all: 10 },
+  },
+  stadyum: {
+    name: 'Stadyum', cat: 'simge', icon: '🏟️', cost: 15000, unlock: 14, size: 2,
+    height: 20,
+    effect: { radius: 5, all: 12, tenants: { genc: 6, ogrenci: 6, emekli: -6 } },
+  },
+  gokdelen: {
+    name: 'Gökdelen', cat: 'simge', icon: '🗼', cost: 20000, unlock: 16,
+    height: 80,
+    effect: { radius: 5, all: 15 },
   },
 };
 
@@ -107,6 +156,7 @@ export const CATEGORIES = {
   ticari: { name: 'Ticari', hint: 'Kendi geliri + çevreye kira bonusu' },
   kamu: { name: 'Kamu ve yeşil', hint: 'Gelir yok, çevreye güçlü bonus' },
   sanayi: { name: 'Sanayi', hint: 'Yüksek gelir, çevreye olumsuz etki' },
+  simge: { name: 'Simge yapı', hint: 'Pahalı ve nadir; çok geniş alana bonus' },
 };
 
 // durations dakika cinsinden

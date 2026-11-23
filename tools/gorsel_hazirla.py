@@ -33,7 +33,11 @@ def remove_background(im, tolerance):
     if alpha.getextrema()[0] < 250:
         return im  # zaten şeffaf
     px = im.load()
-    ref = px[0, 0][:3]
+    # arka plan rengi: kenar piksellerinde en sık görülen renk (köşede leke olsa da şaşmaz)
+    from collections import Counter
+    border = [px[x, 0][:3] for x in range(0, w, 4)] + [px[x, h - 1][:3] for x in range(0, w, 4)]
+    border += [px[0, y][:3] for y in range(0, h, 4)] + [px[w - 1, y][:3] for y in range(0, h, 4)]
+    ref = Counter((r // 8 * 8, g // 8 * 8, b // 8 * 8) for r, g, b in border).most_common(1)[0][0]
 
     def is_bg(c):
         return max(abs(c[0] - ref[0]), abs(c[1] - ref[1]), abs(c[2] - ref[2])) <= tolerance
@@ -57,10 +61,38 @@ def remove_background(im, tolerance):
         if y > 0: q.append((x, y - 1))
         if y < h - 1: q.append((x, y + 1))
     mask = Image.frombytes('L', (w, h), bytes(0 if v else 255 for v in bg))
+    mask = keep_largest(mask)
     # kenardaki arka plan rengine bulaşmış pikselleri at, kenarı yumuşat
     mask = mask.filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(0.8))
     im.putalpha(mask)
     return im
+
+
+def keep_largest(mask):
+    """Yalnız en büyük parçayı bırakır; köşedeki leke ve kırıntıları siler."""
+    w, h = mask.size
+    m = mask.load()
+    seen = bytearray(w * h)
+    best = []
+    for sy in range(0, h, 3):
+        for sx in range(0, w, 3):
+            if m[sx, sy] < 128 or seen[sy * w + sx]:
+                continue
+            comp, q = [], [(sx, sy)]
+            seen[sy * w + sx] = 1
+            while q:
+                x, y = q.pop()
+                comp.append(y * w + x)
+                for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                    if 0 <= nx < w and 0 <= ny < h and not seen[ny * w + nx] and m[nx, ny] >= 128:
+                        seen[ny * w + nx] = 1
+                        q.append((nx, ny))
+            if len(comp) > len(best):
+                best = comp
+    out = bytearray(w * h)
+    for i in best:
+        out[i] = 255
+    return Image.frombytes('L', (w, h), bytes(out))
 
 
 def measure(im):
@@ -97,6 +129,15 @@ def main():
     ap.add_argument('--tolerans', type=int, default=22, help='Arka plan rengine ne kadar benzeyen silinsin')
     ap.add_argument('--genislik', type=int, default=512)
     args = ap.parse_args()
+    # img/kaynak/ayarlar.json: bazı görsellerin kendine özel ayarı (örn. market için tolerans)
+    import json
+    settings_file = ROOT / 'img' / 'kaynak' / 'ayarlar.json'
+    if settings_file.exists():
+        own = json.loads(settings_file.read_text()).get(args.ad, {})
+        if 'tolerans' in own and args.tolerans == 22:
+            args.tolerans = own['tolerans']
+        if 'oran' in own and args.oran is None:
+            args.oran = own['oran']
 
     im = remove_background(Image.open(args.kaynak), args.tolerans)
     bbox = im.getchannel('A').point(lambda v: 255 if v > 128 else 0).getbbox()

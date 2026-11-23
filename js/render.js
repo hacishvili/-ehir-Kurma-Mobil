@@ -6,6 +6,7 @@ export const TW = 64; // kare genişliği
 export const TH = 32; // kare yüksekliği
 
 const CAT_COLORS = {
+  simge: { top: '#c9a227', left: '#f4ead0', right: '#dccfa8' },
   konut: { top: '#f29e4c', left: '#f6e7cf', right: '#e2cba8' },
   ticari: { top: '#3d8bd9', left: '#d9ecfb', right: '#b7d4ee' },
   kamu: { top: '#6fbf4a', left: '#e2f1d6', right: '#c8e0b5' },
@@ -93,13 +94,15 @@ export function createRenderer(canvas) {
     if (cy > H / 2 + lim * 0.6) cam.y -= cy - (H / 2 + lim * 0.6);
   }
 
-  function diamond(x, y, inset = 0) {
+  // Bir karenin (ya da n×n alanın) baklavası
+  function diamond(x, y, inset = 0, n = 1) {
     const [sx, sy] = toScreen(x, y);
-    const hw = (TW / 2) * cam.z * (1 - inset);
-    const hh = (TH / 2) * cam.z * (1 - inset);
-    const cx = sx, cy = sy + (TH / 2) * cam.z;
+    const hw = (TW / 2) * cam.z * n * (1 - inset);
+    const hh = (TH / 2) * cam.z * n * (1 - inset);
+    const cx = sx, cy = sy + (TH / 2) * cam.z * n;
     return { cx, cy, pts: [[cx, cy - hh], [cx + hw, cy], [cx, cy + hh], [cx - hw, cy]] };
   }
+
 
   function poly(pts, fill, stroke) {
     ctx.beginPath();
@@ -143,19 +146,22 @@ export function createRenderer(canvas) {
   function drawInfluence(s, src) {
     const e = BUILDINGS[src.type].effect;
     if (!e) return;
-    const positive = e.all > 0 || (e.all === 0 && Object.values(e.tenants).some(v => v > 0));
+    const positive = e.all > 0 || (e.all === 0 && Object.values(e.tenants || {}).some(v => v > 0));
     const color = e.all < 0 ? 'rgba(225,72,72,0.30)' : positive ? 'rgba(255,236,120,0.42)' : 'rgba(255,255,255,0.3)';
-    for (let y = src.y - e.radius; y <= src.y + e.radius; y++) {
-      for (let x = src.x - e.radius; x <= src.x + e.radius; x++) {
+    const n = G.sizeOf(src.type);
+    const x0 = src.x - e.radius, y0 = src.y - e.radius;
+    const x1 = src.x + n - 1 + e.radius, y1 = src.y + n - 1 + e.radius;
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
         if (!G.inBounds(x, y)) continue;
         poly(diamond(x, y, 0.06).pts, color);
       }
     }
     // dış çerçeve
-    const a = diamond(src.x - e.radius, src.y - e.radius).pts[0];
-    const b = diamond(src.x + e.radius, src.y - e.radius).pts[1];
-    const c = diamond(src.x + e.radius, src.y + e.radius).pts[2];
-    const d = diamond(src.x - e.radius, src.y + e.radius).pts[3];
+    const a = diamond(x0, y0).pts[0];
+    const b = diamond(x1, y0).pts[1];
+    const c = diamond(x1, y1).pts[2];
+    const d = diamond(x0, y1).pts[3];
     ctx.lineWidth = 2 * cam.z;
     ctx.setLineDash([6 * cam.z, 4 * cam.z]);
     poly([a, b, c, d], null, e.all < 0 ? '#c43d3d' : '#fff6c2');
@@ -210,21 +216,23 @@ export function createRenderer(canvas) {
   // Binanın karenin üst köşesinden ne kadar yükseğe çıktığı (balon ve etiketler için)
   function buildingTop(type) {
     const img = sprites[type];
-    if (img) return TW * cam.z * (BUILDINGS[type].spriteScale || 1) * img.naturalHeight / img.naturalWidth - TH * cam.z;
+    const n = G.sizeOf(type);
+    if (img) return TW * cam.z * n * (BUILDINGS[type].spriteScale || 1) * img.naturalHeight / img.naturalWidth - TH * cam.z * n;
     return (BUILDINGS[type].height || 0) * cam.z;
   }
 
   function drawSprite(b, img, alpha, selected, tint) {
     const d = BUILDINGS[b.type];
+    const n = G.sizeOf(b.type);
     const [sx, sy] = toScreen(b.x, b.y);
-    const w = TW * cam.z * (d.spriteScale || 1);
+    const w = TW * cam.z * n * (d.spriteScale || 1);
     const h = w * img.naturalHeight / img.naturalWidth;
-    const bottom = sy + TH * cam.z; // karenin alt köşesi = görselin alt kenarı
+    const bottom = sy + TH * cam.z * n; // alanın alt köşesi = görselin alt kenarı
     ctx.globalAlpha = alpha;
-    if (tint) poly(diamond(b.x, b.y, 0.04).pts, 'rgba(229,83,75,0.55)');
+    if (tint) poly(diamond(b.x, b.y, 0.04, n).pts, 'rgba(229,83,75,0.55)');
     if (selected) {
       ctx.lineWidth = 2.5;
-      poly(diamond(b.x, b.y, 0.04).pts, 'rgba(255,255,255,0.25)', '#ffffff');
+      poly(diamond(b.x, b.y, 0.04, n).pts, 'rgba(255,255,255,0.25)', '#ffffff');
     }
     ctx.drawImage(img, sx - w / 2, bottom - h, w, h);
     ctx.globalAlpha = 1;
@@ -235,12 +243,13 @@ export function createRenderer(canvas) {
     if (sprites[b.type]) return drawSprite(b, sprites[b.type], alpha, selected, tint);
     const col = CAT_COLORS[d.cat];
     const h = (d.height || 0) * cam.z;
-    const inset = d.cat === 'kamu' && !d.height ? 0.08 : 0.2;
-    const g = diamond(b.x, b.y, inset).pts;
+    const n = G.sizeOf(b.type);
+    const inset = d.cat === 'kamu' && !d.height ? 0.08 : 0.2 / n;
+    const g = diamond(b.x, b.y, inset, n).pts;
     const t = g.map(([x, y]) => [x, y - h]);
     ctx.globalAlpha = alpha;
     // gölge
-    poly(diamond(b.x, b.y, inset * 0.6).pts, 'rgba(30,50,20,0.18)');
+    poly(diamond(b.x, b.y, inset * 0.6, n).pts, 'rgba(30,50,20,0.18)');
     if (h > 0) {
       poly([g[3], g[2], t[2], t[3]], col.left);
       poly([g[2], g[1], t[1], t[2]], col.right);
@@ -266,14 +275,17 @@ export function createRenderer(canvas) {
 
   // Kutu çiziminde bacalı binalara küçük bir baca
   function drawChimney(b, d, h) {
-    const fx = b.x + 0.5 + d.smoke.x, fy = b.y + 0.5 + d.smoke.y;
+    const n = G.sizeOf(b.type);
+    const sm = Array.isArray(d.smoke) ? d.smoke[0] : d.smoke;
+    const fx = b.x + n / 2 + sm.x, fy = b.y + n / 2 + sm.y;
     const [cx, cy] = toScreen(fx, fy);
-    const w = 4 * cam.z, top = cy - (d.smoke.h ?? (d.height || 0) + 14) * cam.z;
+    const w = 4 * cam.z, top = cy - (sm.h ?? (d.height || 0) + 14) * cam.z;
     ctx.fillStyle = '#8b4a3a';
     ctx.fillRect(cx - w, top, w * 2, cy - h - top);
     ctx.fillStyle = '#5c2f25';
     ctx.fillRect(cx - w - 1, top - 2 * cam.z, w * 2 + 2, 3 * cam.z);
   }
+
 
   function drawWindows(g, t, h, cat) {
     const rows = Math.max(1, Math.floor(h / (10 * cam.z)));
@@ -366,8 +378,12 @@ export function createRenderer(canvas) {
 
     // binalar, ağaçlar, arabalar, insanlar: arkadan öne (karenin merkezine göre)
     const list = Object.values(s.buildings).filter(b => b.type !== 'yol' && (!pl || b.id !== pl.moveId));
-    const items = list.map(b => ({ b, ghost: false, key: b.x + b.y + 1, kx: b.x + 0.5 }));
-    if (pl && pl.type !== 'yol') items.push({ b: { id: '_ghost', type: pl.type, x: pl.x, y: pl.y }, ghost: true, key: pl.x + pl.y + 1, kx: pl.x + 0.5 });
+    const keyOf = b => { const n = G.sizeOf(b.type); return { key: b.x + b.y + n, kx: b.x + n / 2 }; };
+    const items = list.map(b => ({ b, ghost: false, ...keyOf(b) }));
+    if (pl && pl.type !== 'yol') {
+      const g = { id: '_ghost', type: pl.type, x: pl.x, y: pl.y };
+      items.push({ b: g, ghost: true, ...keyOf(g) });
+    }
     const all = amb ? items.concat(amb.drawables(s, t)) : items;
     all.sort((a, b) => a.key - b.key || a.kx - b.kx);
     for (const it of all) {
