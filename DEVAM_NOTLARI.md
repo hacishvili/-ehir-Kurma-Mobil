@@ -92,3 +92,10 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 - Parıltı yerleri görsellere göre ayarlandı: villa havuzu, park çeşmesi (`js/data.js` → `sparkle`, `js/ambient.js` artık x/y kaymasını okuyor).
 - Telefon boyutunda bütün binalarla şehir denendi, hata yok.
 - Bu dört görselde de referans görsel eklenmemişti; tarz yine de birbirine yakın.
+
+## 2026-11-23 — Bütün görsel komutları (PDF)
+
+- Kullanıcı kararı: önce dokümandaki her şey eklenecek, denge ayarı sonra.
+- `docs/Gorsel-Komutlari.pdf`: 37 görsel için komut, oran ve dosya adı. Bölümler: 9 yeni bina (AVM, fabrika, stadyum 2×2), 2 yenileme (atölye, market), 6 zemin (kum, deniz, kıyı, nehir, tepe, beton), 6 süsleme, 6 kiracı portresi, danışman, 3 simge + 3 koleksiyon parçası, uygulama ikonu.
+- Kullanıcı numarayla "hazır" diyecek; Claude Higgsfield geçmişinden komut metnine göre bulup indirecek.
+- Kodda gereken yeni işler: 2×2 bina desteği, zemin kareleri, süslemeler, kiracı portreleri, yeni kiracılar (sanatçı, ünlü), mahalleler, emlak piyasası, elmas, koleksiyon, kiracı hikayeleri, günlük hedefler.
