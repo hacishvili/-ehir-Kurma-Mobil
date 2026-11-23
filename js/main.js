@@ -1,5 +1,5 @@
 // Oyunun ekranı: döngü, dokunma, menüler. Kurallar game.js'te, rakamlar data.js'te.
-import { CONFIG, BUILDINGS, TENANTS, CATEGORIES, QUESTS, COLLECTION, HOODS, STORIES, RESOURCES, ACHIEVEMENTS, INDUSTRY, VISITORS, SEASONS } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, CATEGORIES, QUESTS, COLLECTION, HOODS, STORIES, RESOURCES, ACHIEVEMENTS, INDUSTRY, VISITORS, SEASONS, TERRAIN } from './data.js';
 import * as G from './game.js';
 import { createRenderer, loadSprites } from './render.js';
 import { createAmbient } from './ambient.js';
@@ -357,8 +357,30 @@ function onTap(tx, ty) {
   const b = G.buildingAt(s, tx, ty);
   if (b && G.isRoadType(b.type)) { openRoad(b.id); return; }
   if (b) { openBuilding(b.id); return; }
-  if (G.isAvenue(tx, ty)) { toast('Ana cadde. Yollarını buna bağla.'); deselect(); return; }
+  if (G.isAvenue(tx, ty)) { openAvenue(tx, ty); return; }
+  if (G.terrainAt(tx, ty) === 'tepe' && !HOODS[G.hoodAt(tx, ty)]?.allTerrain) { openHill(tx, ty); return; }
   deselect();
+}
+
+function openAvenue(x, y) {
+  view.selectedId = null;
+  openSheet({
+    valid: () => G.isAvenue(x, y),
+    render: () => `<h2>🛣️ Ana cadde</h2><p class="sub">Yollarını ana caddeye bağla. Bu kareyi kaldırırsan cadde burada kesilir; buraya bağlı yollar başka yerden caddeye ulaşmıyorsa bağlantısız kalır. Geri getirmek için kareye yol yap.</p>
+      <button type="button" class="btn danger" data-act="remove">Bu kareyi kaldır</button>`,
+    actions: { remove: () => { if (result(G.removeAvenue(s, x, y), 'Cadde karesi kaldırıldı.')) { deselect(); save(); } } },
+  });
+}
+
+function openHill(x, y) {
+  view.selectedId = null;
+  openSheet({
+    valid: () => G.terrainAt(x, y) === 'tepe',
+    sig: () => `${Math.floor(s.money / 25)}`,
+    render: () => `<h2>⛰️ Tepe</h2><p class="sub">Tepedeki evler +%${TERRAIN.tepe.onBonus} kira alır. Düzleştirirsen bonus ve kayalar gider.</p>
+      <button type="button" class="btn danger" data-act="flatten" ${s.money < G.flattenCost() ? 'disabled' : ''}>Düzleştir (${G.formatMoney(G.flattenCost())} 🪙)</button>`,
+    actions: { flatten: () => { if (result(G.flattenHill(s, x, y), 'Tepe düzleştirildi.')) { deselect(); save(); } } },
+  });
 }
 
 function deselect() {
@@ -373,8 +395,11 @@ function paintRoad(tx, ty, isFirst) {
   const b = G.buildingAt(s, tx, ty);
   if (roadErase) {
     if (b && G.isRoadType(b.type)) G.sell(s, b.id);
+    else if (G.isAvenue(tx, ty)) { const r = G.removeAvenue(s, tx, ty); if (!r.ok && isFirst) toast(r.msg, true); }
     return;
   }
+  // kaldırılmış ana cadde karesine yol yapılınca cadde geri gelir
+  if (!b && G.isRemovedAvenue(tx, ty)) { G.restoreAvenue(s, tx, ty); return; }
   if (G.sizeOf(roadType) > 1) {
     // döner kavşak: sürüklerken değil, dokununca; dokunulan kare ortası olur
     if (!isFirst) return;
@@ -404,7 +429,7 @@ function updateRoadBar() {
     return `<button type="button" class="chip road-type ${roadType === id ? 'on' : ''}" data-road="${id}" ${locked ? 'disabled' : ''}>${d.icon} ${d.name}${locked ? ` · Sv ${d.unlock}` : d.cost ? ` · ${d.cost}` : ' · bedava'}</button>`;
   }).join('');
   $('placeInfo').innerHTML = `<b>${roadErase ? 'Yol sil' : 'Yol yap'}</b><div class="road-types">${chips}</div>
-    <span>${!roadErase && G.sizeOf(roadType) > 1
+    <span>${roadErase ? 'Silmek için yola ya da ana caddeye dokun, ya da üstünden sürükle. Kaldırılan cadde karesi, üstüne yol yapınca geri gelir.' : G.sizeOf(roadType) > 1
       ? 'Döner kavşak 3×3 kare kaplar: ortası olacak kareye dokun. Yollar yalnız dört kolun ucuna bağlanır.'
       : 'Dokununca yol konur. Yoldan ya da caddeden başlayıp sürükleyerek çiz; boş yerden sürüklersen harita kayar. Binalar bağlı bir yola komşu olmalı. Nehrin üstüne yol köprü olur.'}</span>`;
   for (const el of $('placeInfo').querySelectorAll('[data-road]')) {

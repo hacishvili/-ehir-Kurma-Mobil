@@ -42,6 +42,11 @@ export function hydrate(s) {
   for (const k of Object.keys(COLLECTION)) s.collection[k] = s.collection[k] || 0;
   if (s.collectionSets === undefined) s.collectionSets = 0;
   if (!s.hood) { s.hood = 'eski'; s.hoodsOpen = ['eski']; s.hoods = {}; }
+  if (!s.removedAvenue) s.removedAvenue = [];
+  if (!s.flattened) s.flattened = [];
+  removedAvenue = new Set(s.removedAvenue);
+  flattened = new Set(s.flattened);
+  syncGrids();
   if (s.v === 1) migrateToWorld(s);
   if (!s.rareUnlocked) s.rareUnlocked = [];
   if (!s.stats.storiesDone) s.stats.storiesDone = 0;
@@ -92,9 +97,23 @@ export function parcelOf(x, y) {
   return [Math.floor(x / CONFIG.parcelSize), Math.floor(y / CONFIG.parcelSize)];
 }
 
+// Açık parseller tablosu (çizim her karede binlerce kez sorar; dizi araması ve metin anahtarı yavaş).
+// Parseller yalnız eklenir, bu yüzden dizi uzunluğu değişince yeniden kurulur.
+let unlockedFor = null, unlockedLen = -1;
+const unlockedGrid = new Uint8Array((CONFIG.gridSize / CONFIG.parcelSize) ** 2);
 export function isUnlocked(s, x, y) {
-  const [px, py] = parcelOf(x, y);
-  return s.parcels.includes(`${px},${py}`);
+  const P = CONFIG.parcelSize, side = CONFIG.gridSize / P;
+  if (unlockedFor !== s || unlockedLen !== s.parcels.length) {
+    unlockedGrid.fill(0);
+    for (const k of s.parcels) {
+      const [px, py] = k.split(',').map(Number);
+      if (px >= 0 && py >= 0 && px < side && py < side) unlockedGrid[py * side + px] = 1;
+    }
+    unlockedFor = s; unlockedLen = s.parcels.length;
+  }
+  if (x < 0 || y < 0) return false;
+  const px = Math.floor(x / P), py = Math.floor(y / P);
+  return px < side && py < side && unlockedGrid[py * side + px] === 1;
 }
 
 // ---------- Mahalle ----------
@@ -109,12 +128,39 @@ const terrainMap = new Map(WORLD_TERRAIN.map(([x, y, type]) => [`${x},${y}`, typ
 const avenueSet = new Set();
 for (const a of AVENUES) for (let y = a.y0; y <= a.y1; y++) avenueSet.add(`${a.x},${y}`);
 export const AVENUE_TILES = avenueSet.size;
+// Kaldırılan cadde karesinin altındaki arazi (nehir, kumsal): yanındaki karenin arazisi
+const underAvenue = new Map();
+for (const k of avenueSet) {
+  const [x, y] = k.split(',').map(Number);
+  const t = terrainMap.get(`${x - 1},${y}`);
+  if (t === 'nehir' || t === 'kum') underAvenue.set(k, t);
+}
+// Oyuncunun kaldırdığı cadde kareleri ve düzleştirdiği tepeler (kayıttan; hydrate kurar)
+let removedAvenue = new Set();
+let flattened = new Set();
+const FLATTEN_COST = 300;
+
+// Kare başına hızlı tablolar (metin anahtarı üretmeden): arazi, cadde, mahalle
+const GN = CONFIG.gridSize;
+const terrainGrid = new Array(GN * GN).fill(null);
+const avenueGrid = new Uint8Array(GN * GN); // 1 cadde, 2 kaldırılmış cadde
+const flatGrid = new Uint8Array(GN * GN);
+const hoodGrid = new Array(GN * GN).fill(null);
+for (const [k, type] of terrainMap) { const [x, y] = k.split(',').map(Number); if (x >= 0 && y >= 0 && x < GN && y < GN) terrainGrid[y * GN + x] = type; }
+for (const k of avenueSet) { const [x, y] = k.split(',').map(Number); avenueGrid[y * GN + x] = 1; }
+for (let y = 0; y < GN; y++) for (let x = 0; x < GN; x++) {
+  hoodGrid[y * GN + x] = parcelHood.get(`${Math.floor(x / CONFIG.parcelSize)},${Math.floor(y / CONFIG.parcelSize)}`) || null;
+}
+function syncGrids() {
+  for (const k of avenueSet) { const [x, y] = k.split(',').map(Number); avenueGrid[y * GN + x] = removedAvenue.has(k) ? 2 : 1; }
+  flatGrid.fill(0);
+  for (const k of flattened) { const [x, y] = k.split(',').map(Number); if (x >= 0 && y >= 0 && x < GN && y < GN) flatGrid[y * GN + x] = 1; }
+}
 
 // Karenin (ya da parselin) mahallesi
 export function hoodAt(x, y) {
   if (!inBounds(x, y)) return null;
-  const [px, py] = parcelOf(x, y);
-  return parcelHood.get(`${px},${py}`) || null;
+  return hoodGrid[y * GN + x];
 }
 export function hoodOfParcel(px, py) {
   return parcelHood.get(`${px},${py}`) || null;
@@ -145,14 +191,62 @@ export function hoodCenter(id) {
 // Karedeki arazi türü (nehir, tepe, deniz ...) ya da null
 export function terrainAt(x, y) {
   if (!inBounds(x, y)) return null;
-  const t = terrainMap.get(`${x},${y}`);
+  const i = y * GN + x;
+  if (flatGrid[i]) return null;
+  const t = terrainGrid[i] || (avenueGrid[i] === 2 ? underAvenue.get(`${x},${y}`) : null);
   if (t) return t;
-  const all = hoodDef(x, y).allTerrain;
-  return all && !isAvenue(x, y) ? all : null;
+  const all = (HOODS[hoodGrid[i]] || HOODS.eski).allTerrain;
+  return all && avenueGrid[i] !== 1 ? all : null;
 }
 
 export function isAvenue(x, y) {
-  return avenueSet.has(`${x},${y}`);
+  return inBounds(x, y) && avenueGrid[y * GN + x] === 1;
+}
+
+// Kaldırılmış bir ana cadde karesi mi (üstüne yol yapılınca cadde geri gelir)
+export function isRemovedAvenue(x, y) {
+  return inBounds(x, y) && avenueGrid[y * GN + x] === 2;
+}
+
+export function removeAvenue(s, x, y) {
+  if (!isAvenue(x, y)) return fail('Burada ana cadde yok.');
+  if (!isUnlocked(s, x, y)) return fail('Önce bu arsayı aç.');
+  const k = `${x},${y}`;
+  s.removedAvenue.push(k);
+  removedAvenue.add(k);
+  syncGrids();
+  changed(s);
+  return ok();
+}
+
+export function restoreAvenue(s, x, y) {
+  const k = `${x},${y}`;
+  if (!removedAvenue.has(k)) return fail('Burada kaldırılmış cadde yok.');
+  if (buildingAt(s, x, y)) return fail('Bu kare dolu.');
+  s.removedAvenue = s.removedAvenue.filter(v => v !== k);
+  removedAvenue.delete(k);
+  syncGrids();
+  changed(s);
+  return ok();
+}
+
+export function flattenCost() {
+  return FLATTEN_COST;
+}
+
+// Tepeyi düzleştir: tepe bonusu ve kayalar gider (Tepe Villaları'nda olmaz, orada her kare tepe)
+export function flattenHill(s, x, y) {
+  if (terrainAt(x, y) !== 'tepe') return fail('Burada tepe yok.');
+  if (hoodDef(x, y).allTerrain) return fail(`${hoodDef(x, y).name} mahallesinde tepeler düzleştirilemez.`);
+  if (!isUnlocked(s, x, y)) return fail('Önce bu arsayı aç.');
+  if (s.money < FLATTEN_COST) return fail('Yeterli para yok.');
+  s.money -= FLATTEN_COST;
+  const k = `${x},${y}`;
+  s.flattened.push(k);
+  flattened.add(k);
+  syncGrids();
+  changed(s);
+  return ok({ cost: FLATTEN_COST });
 }
 
 export function hoodUnlocked(s, id) {
@@ -282,6 +376,7 @@ function computeConnected(grid) {
   const queue = [];
   for (const a of AVENUES) {
     for (let y = a.y0; y <= a.y1; y++) {
+      if (!isAvenue(a.x, y)) continue; // kaldırılmış cadde karesi
       roadOk[y][a.x] = true;
       queue.push([a.x, y]);
     }

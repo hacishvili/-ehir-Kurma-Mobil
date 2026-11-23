@@ -713,3 +713,25 @@ test('döner kavşak 3x3 kaplar, yalnız dört kolun ucundan bağlanır', () => 
   assert.ok(G.build(s, 'yol', 9, 5).ok);
   assert.equal(G.isRoadConnected(s, 9, 4), true, 'sağ kola bağlanınca bağlı');
 });
+
+test('ana cadde karesi kaldırılır ve geri gelir; tepe düzleştirilir', () => {
+  const s = rich();
+  G.buyParcel(s, 1, 1);
+  assert.equal(G.isAvenue(AX, 5), true);
+  assert.ok(G.build(s, 'ev', AX + 1, 5).ok);
+  assert.ok(G0.removeAvenue(s, AX + HOODS.eski.origin[0], 5 + HOODS.eski.origin[1]).ok);
+  assert.equal(G.isAvenue(AX, 5), false);
+  assert.ok(G.build(s, 'ev', AX, 5).ok, 'kaldırılan caddeye bina yapılabilir');
+  // eski kaydı yeniden yükleyince kaldırılan kare hatırlanır
+  G.deserialize(G.serialize(s));
+  assert.equal(G.isAvenue(AX, 5), false);
+  // tepe (büyük haritada 2,15) düzleştirilir; arsa açık olmalı
+  const s2 = rich();
+  const [px, py] = G0.parcelOf(2, 15);
+  assert.equal(G0.flattenHill(s2, 2, 15).ok, false, 'kapalı arsada olmaz');
+  s2.parcels.push(`${px},${py}`);
+  const money = s2.money;
+  assert.ok(G0.flattenHill(s2, 2, 15).ok);
+  assert.equal(G0.terrainAt(2, 15), null);
+  assert.equal(s2.money, money - G0.flattenCost());
+});

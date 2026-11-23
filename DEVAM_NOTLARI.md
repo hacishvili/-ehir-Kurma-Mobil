@@ -267,3 +267,14 @@ Görseller (Claude, ~50 kredi): kaynaklar `img/kaynak/`, doğa ve mevsim ağaçl
   Yalnız dört kenarın ortasındaki koldan bağlanır (game.js linkOk/roadLink), ortası yol değil.
   Görsel img/yollar/kavsak.png tek parça (render.js drawRoundabouts). Arabalar halkada saat yönünün tersine döner (ambient.js canMove/pose).
 - Tepe arazisindeki yollar da artık görselle çiziliyor.
+
+## Her şey yıkılabilir, kasma ve sahil
+- Sanayi ve İş Merkezi'ndeki gri beton zemin kaldırıldı (data.js groundTile).
+- Ana cadde kareleri kaldırılabilir: caddeye dokun → "Bu kareyi kaldır" (game.js removeAvenue, s.removedAvenue).
+  Kaldırılan kareye yol çizince cadde geri gelir (restoreAvenue). Yol modunda silgi caddeyi de siler.
+- Tepecikler düzleştirilebilir: tepeye dokun → "Düzleştir (300)" (flattenHill, s.flattened). Tepe Villaları (allTerrain) hariç.
+- Ağaç ve kayalar yalnız kilitli arsada ve harita dışında; arsa açılınca kendiliğinden kalkar.
+- Hız: arazi/cadde/mahalle/açık arsa sorguları dizi tablolarından (syncGrids, her değişiklikte yenilenir);
+  çim parsel başına tek baklava; ekran çözünürlüğü en çok 2x. DPR 1'de kare ortancası 33 → 16,7 ms.
+- Sahil: kum ve kıyı kare görselleri yerine render.js drawShore — kum dokusu (kodla), dalgalı tek kıyı çizgisi
+  (shoreLine), ıslak kum, sığ su ve köpük. Kare kare görsel testere dişi gibi görünüyordu. Kumdaki yollar da görselle.

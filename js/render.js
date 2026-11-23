@@ -1,5 +1,5 @@
 // İzometrik şehir çizimi (Canvas 2D). Oyun mantığını değiştirmez, yalnız okur.
-import { CONFIG, BUILDINGS, TENANTS, TERRAIN, UPGRADES, VARIANTS, RESOURCES, VISITORS, HOODS, AVENUES } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, TERRAIN, UPGRADES, VARIANTS, RESOURCES, VISITORS, HOODS, AVENUES, WORLD_TERRAIN } from './data.js';
 import * as G from './game.js';
 
 export const TW = 64; // kare genişliği
@@ -120,6 +120,7 @@ export function loadSprites(onLoad = () => {}) {
   kavsak.onload = () => { sprites['yol-kavsak'] = kavsak; sprites['yol-kavsak-off'] = tinted(kavsak); };
   kavsak.src = 'img/yollar/kavsak.png';
   sprites['doku-deniz'] = seaTexture();
+  sprites['doku-kum'] = sandTexture();
   // mahalle zemini (beton)
   const beton = new Image();
   beton.onload = () => { sprites['zemin-beton'] = beton; };
@@ -164,6 +165,37 @@ function seaTexture() {
   return cv;
 }
 
+// Kum dokusu (kodla): sıcak sarı zemin, küçük açık-koyu benekler, dikişsiz tekrar eder
+function sandTexture() {
+  const S = 256;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const c = cv.getContext('2d');
+  c.fillStyle = '#e6c88e';
+  c.fillRect(0, 0, S, S);
+  for (let i = 0; i < 60; i++) {
+    const x = hash(i, 11) * S, y = hash(i, 12) * S, r = 10 + hash(i, 13) * 30;
+    c.fillStyle = hash(i, 14) < 0.5 ? 'rgba(190,140,70,0.10)' : 'rgba(255,240,200,0.14)';
+    for (const [ox, oy] of [[0, 0], [S, 0], [-S, 0], [0, S], [0, -S]]) {
+      c.beginPath(); c.arc(x + ox, y + oy, r, 0, Math.PI * 2); c.fill();
+    }
+  }
+  for (let i = 0; i < 500; i++) {
+    const x = hash(i, 15) * S, y = hash(i, 16) * S;
+    c.fillStyle = hash(i, 17) < 0.6 ? 'rgba(150,105,50,0.35)' : 'rgba(255,250,230,0.5)';
+    c.fillRect(x, y, 1.5, 1.5);
+  }
+  return cv;
+}
+
+// Sahil şeridi: kumun başladığı satır ve kıyı satırı (harita verisinden)
+const SAND_Y0 = Math.min(...WORLD_TERRAIN.filter(t => t[2] === 'kum').map(t => t[1]));
+const SHORE_Y = Math.min(...WORLD_TERRAIN.filter(t => t[2] === 'kiyi').map(t => t[1]));
+// kumla denizin buluştuğu çizgi (kıyı satırının ortasında hafif dalgalı, kesintisiz)
+function shoreLine(x) {
+  return SHORE_Y + 0.5 + 0.11 * Math.sin(x * 1.7) + 0.07 * Math.sin(x * 0.61 + 1.3);
+}
+
 export function hasSprite(type) {
   return !!sprites[type];
 }
@@ -175,7 +207,7 @@ export function createRenderer(canvas) {
   let dpr = 1, W = 0, H = 0;
 
   function resize() {
-    dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    dpr = Math.min(window.devicePixelRatio || 1, 2); // 3x ekranda her karede 2,25 kat fazla piksel: kasma yapıyordu
     W = canvas.clientWidth;
     H = canvas.clientHeight;
     canvas.width = Math.round(W * dpr);
@@ -307,12 +339,18 @@ export function createRenderer(canvas) {
         ctx.restore();
       }
     }
+    // haritanın kenarında hafif gölge: şehir alanı çayırdan ayrılsın (su ve kum üstüne binmesin diye önce)
+    const e = [diamond(0, 0).pts[0], diamond(n - 1, 0).pts[1], diamond(n - 1, n - 1).pts[2], diamond(0, n - 1).pts[3]];
+    ctx.lineWidth = 6 * cam.z;
+    poly(e, null, 'rgba(30,50,20,0.18)');
+    ctx.lineWidth = 1;
     seaFill((x, y) => !G.inBounds(x, y) && outsideTerrain(x, y) === 'deniz', v);
+    if (v.y1 >= SAND_Y0) drawShore(v.x0, v.x1 + 1, Math.max(v.y1 + 1, n));
     for (let y = v.y0; y <= v.y1; y++) {
       for (let x = v.x0; x <= v.x1; x++) {
         if (G.inBounds(x, y)) continue;
         const ter = outsideTerrain(x, y);
-        if (ter && ter !== 'deniz' && sprites[TERRAIN[ter].sprite]) drawTile(x, y, sprites[TERRAIN[ter].sprite]);
+        if (ter && ter !== 'deniz' && ter !== 'kum' && ter !== 'kiyi' && sprites[TERRAIN[ter].sprite]) drawTile(x, y, sprites[TERRAIN[ter].sprite]);
         if (outsideAvenue(x, y)) {
           const kind = avenueKind();
           const img = sprites[`yol-${kind}-5`];
@@ -321,10 +359,42 @@ export function createRenderer(canvas) {
         }
       }
     }
-    // haritanın kenarında hafif gölge: şehir alanı çayırdan ayrılsın
-    const e = [diamond(0, 0).pts[0], diamond(n - 1, 0).pts[1], diamond(n - 1, n - 1).pts[2], diamond(0, n - 1).pts[3]];
-    ctx.lineWidth = 6 * cam.z;
-    poly(e, null, 'rgba(30,50,20,0.18)');
+  }
+
+  // Sahil: kum şeridi, dalgalı tek kıyı çizgisi, köpük ve ıslak kum. Kare kare görsel
+  // çizilince dalga çizgisi testere dişi gibi kırılıyordu; şimdi baştan sona kesintisiz.
+  function drawShore(xa, xb, yEnd) {
+    const path = (pts) => { ctx.beginPath(); pts.forEach(([x, y], i) => { const [sx, sy] = toScreen(x, y); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); }); };
+    const line = [];
+    for (let x = xa; x <= xb + 1e-6; x += 0.25) line.push([x, shoreLine(x)]);
+    // kum (kıyı çizgisine kadar)
+    path([[xa, SAND_Y0], [xb, SAND_Y0], ...line.slice().reverse()]);
+    ctx.closePath();
+    ctx.fillStyle = texture('kum', 2.4) || '#e6c88e';
+    ctx.fill();
+    // ıslak kum: çizginin hemen üstünde koyu şerit
+    path([...line.map(([x, y]) => [x, y - 0.22]), ...line.slice().reverse()]);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(150,110,60,0.22)';
+    ctx.fill();
+    // deniz (çizgiden aşağı)
+    path([...line, [xb, yEnd], [xa, yEnd]]);
+    ctx.closePath();
+    ctx.fillStyle = texture('deniz', 3) || '#3fa3a6';
+    ctx.fill();
+    // sığ su: kıyıya yakın açık turkuaz
+    path([...line, ...line.slice().reverse().map(([x, y]) => [x, y + 0.45])]);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(160,235,220,0.30)';
+    ctx.fill();
+    // köpük: kıyıda kalın beyaz, biraz açıkta ince ikinci dalga
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.lineWidth = 2.2 * cam.z;
+    path(line); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1.2 * cam.z;
+    path(line.map(([x, y]) => [x, y + 0.2 + 0.04 * Math.sin(x * 2.3)])); ctx.stroke();
     ctx.lineWidth = 1;
   }
 
@@ -365,11 +435,13 @@ export function createRenderer(canvas) {
     // açık arsaların çimi tek parça çizilir (kareler arasında çizgi kalmaz)
     const lawnName = SEASON_GROUND[G.season()][0];
     const lawn = texture(lawnName, lawnName === 'kar' ? 2.6 : 2.2) || texture('cim', 2.2);
+    // parsel başına tek baklava (kare başına çizmek yüzlerce parça demek, yavaş)
+    const P = CONFIG.parcelSize;
     ctx.beginPath();
-    for (let y = gy0; y <= gy1; y++) {
-      for (let x = gx0; x <= gx1; x++) {
-        if (!G.isUnlocked(s, x, y)) continue;
-        const d = diamond(x, y, -0.01);
+    for (let py = Math.floor(gy0 / P); py <= Math.floor(gy1 / P); py++) {
+      for (let px = Math.floor(gx0 / P); px <= Math.floor(gx1 / P); px++) {
+        if (!G.isUnlocked(s, px * P, py * P)) continue;
+        const d = diamond(px * P, py * P, -0.003, P);
         ctx.moveTo(d.pts[0][0], d.pts[0][1]);
         for (let i = 1; i < 4; i++) ctx.lineTo(d.pts[i][0], d.pts[i][1]);
         ctx.closePath();
@@ -380,6 +452,7 @@ export function createRenderer(canvas) {
     // sonbaharda çim biraz sararır
     if (G.season() === 'sonbahar') { ctx.fillStyle = 'rgba(190,130,30,0.16)'; ctx.fill(); }
     seaFill((x, y) => G.terrainAt(x, y) === 'deniz', { x0: gx0, x1: gx1, y0: gy0, y1: gy1 });
+    if (gy1 >= SAND_Y0) drawShore(gx0 - 0.02, gx1 + 1.02, n + 0.04); // deniz satırını da kapsar: dikiş kalmaz
     // kilitli arsalarda ayrıca biraz koyu yabani çayır (yükü doku zaten taşıyor)
     for (let y = gy0; y <= gy1; y++) {
       for (let x = gx0; x <= gx1; x++) {
@@ -390,7 +463,8 @@ export function createRenderer(canvas) {
         const ter = G.terrainAt(x, y);
         const bridge = G.isAvenue(x, y) && G.terrainAt(x - 1, y) === 'nehir';
         const hood = HOODS[G.hoodAt(x, y)] || {};
-        let terImg = ter === 'deniz' ? null : ter ? sprites[TERRAIN[ter].sprite] : bridge ? sprites[TERRAIN.nehir.sprite] : null;
+        const shore = ter === 'deniz' || ter === 'kum' || ter === 'kiyi'; // sahil drawShore ile tek parça çizildi
+        let terImg = shore ? null : ter ? sprites[TERRAIN[ter].sprite] : bridge ? sprites[TERRAIN.nehir.sprite] : null;
         // Sanayi ve İş Merkezi'nde açık arsalar beton
         const road = b && G.isRoadType(b.type) ? b.type : null;
         // döner kavşağın kareleri: zemin çizilir, görsel ayrıca 3x3 tek parça (drawRoundabouts)
@@ -398,8 +472,8 @@ export function createRenderer(canvas) {
         // görselli yol: bant karenin ortasından geçer, kenarında zemin görünür
         const avenue = G.isAvenue(x, y);
         const onRiver = ter === 'nehir' || bridge;
-        const roadImg = avenue ? roadSprite(s, x, y, avenueKind(), onRiver) : road && (!ter || ter === 'nehir' || ter === 'tepe') ? roadSprite(s, x, y, road, onRiver) : null;
-        if (!terImg && ter !== 'deniz' && hood.groundTile && unlocked && (!(avenue || road) || roadImg || ringImg)) terImg = sprites[hood.groundTile] || null;
+        const roadImg = avenue ? roadSprite(s, x, y, avenueKind(), onRiver) : road && (!ter || ter === 'nehir' || ter === 'tepe' || ter === 'kum') ? roadSprite(s, x, y, road, onRiver) : null;
+        if (!terImg && !shore && hood.groundTile && unlocked && (!(avenue || road) || roadImg || ringImg)) terImg = sprites[hood.groundTile] || null;
         if (roadImg || ringImg) fill = null;
         else if (avenue) fill = GROUND.avenue;
         else if (road) fill = !G.isRoadConnected(s, x, y) ? GROUND.roadOff : road === 'yol-tas' ? GROUND.cobble : GROUND.road;
@@ -409,6 +483,13 @@ export function createRenderer(canvas) {
           if (G.season() === 'kis' && (ter === 'nehir' || ter === 'tepe' || bridge)) poly(d.pts, 'rgba(240,246,255,0.55)');
           if (!unlocked) poly(d.pts, 'rgba(25,45,20,0.32)');
           else if (ter === 'tepe' && !b) poly(d.pts, null, 'rgba(40,70,30,0.12)');
+        } else if (!unlocked && ter === 'kum') {
+          poly(d.pts, 'rgba(60,45,20,0.2)');
+        } else if (!unlocked && ter === 'kiyi') {
+          // yalnız karenin kum kısmı koyulaşır (deniz olduğu gibi kalır)
+          const pts = [toScreen(x, y), toScreen(x + 1, y)];
+          for (let i = 4; i >= 0; i--) pts.push(toScreen(x + i / 4, shoreLine(x + i / 4)));
+          poly(pts, 'rgba(60,45,20,0.2)');
         }
         if (onRiver && roadImg) {
           drawSquare(x, y, roadImg);

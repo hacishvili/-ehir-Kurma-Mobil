@@ -624,14 +624,13 @@ export const HOODS = {
     name: 'Sanayi Bölgesi', short: 'Sanayi', icon: '🏭', unlock: 15, openCost: 60000, rule: 'kirlilik',
     hint: 'Şehrin doğusu. Kirlilik: olumsuz etkiler 1 kare daha geniş yayılır. Sanayi geliri +%25.',
     area: [6, 0, 8, 5], start: [7, 1], origin: [24, 0],
-    groundTile: 'zemin-beton', industryBonus: 0.25,
+    industryBonus: 0.25,
     parcelBaseCost: 6000,
   },
   is: {
     name: 'İş Merkezi', short: 'İş Mrk.', icon: '🏙️', unlock: 22, openCost: 200000, rule: 'golge',
     hint: 'Şehrin kuzeyi. Yükseklik: gökdelen, rezidans ve saat kulesi yanındaki evlerin manzarasını kapatır (-%10).',
     area: [3, 0, 5, 2], start: [4, 1], origin: [12, 0],
-    groundTile: 'zemin-beton',
     parcelBaseCost: 20000,
   },
   tepe: {
