@@ -78,3 +78,10 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 - Ortamın izin listesine `d8j0ntlcm91z4.cloudfront.net` eklendi (kullanıcı onayıyla). Claude, kullanıcının Higgsfield'da ürettiği görselleri listeleyip (show_generations) orijinal PNG'yi indirebiliyor. Kullanıcının görsel yüklemesine gerek yok.
 - Ev, kafe ve park kaynakları sıkıştırılmış webp yerine orijinal PNG ile değiştirildi ve yeniden işlendi.
 - Not: kullanıcının üretimleri Nano Banana modeliyle; kafe ve parkta referans görsel eklenmemişti.
+
+## 2026-11-23 — Market, Apartman, Atölye görselleri
+
+- Claude, Higgsfield geçmişinden üç görseli indirip hazırladı ve oyuna koydu. 10 binanın 6'sının görseli var: ev, kafe, park, market, apartman, atölye.
+- Atölye dumanı artık görseldeki bacanın tepesinden çıkıyor (`js/data.js` → `smoke`).
+- Gözlem: bu üç görselde de referans görsel eklenmemiş; market ve atölye ev/kafeden daha çizgi filmsi (kalın çizgi, marketteki elmanın yüzü var). Atölye binası bahçesine göre küçük kalıyor.
+- Kalan: villa, gece kulübü, okul, metro durağı.

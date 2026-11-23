@@ -97,7 +97,7 @@ export const BUILDINGS = {
   atolye: {
     name: 'Atölye', cat: 'sanayi', icon: '🏭', cost: 800, unlock: 3,
     incomePerHour: 220, height: 28,
-    smoke: { x: 0.1, y: -0.12 }, // baca: kare merkezinden kayma; h verilmezse bina yüksekliği + 14
+    smoke: { x: 0.148, y: -0.148, h: 21 }, // baca: kare merkezinden kayma ve yükseklik (img/binalar/atolye.png'ye göre)
     effect: { radius: 2, all: -8, tenants: { aile: -10, emekli: -12, genc: -4 } },
   },
 };
