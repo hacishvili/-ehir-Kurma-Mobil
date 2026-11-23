@@ -94,6 +94,7 @@ function start(hotData = {}) {
 function frame(t) {
   const now = Date.now();
   G.advance(s, now - lastWall);
+  G.applyTestMode(s);
   lastWall = now;
   drainEvents(t);
   updateHud();
@@ -1039,7 +1040,7 @@ function goHood(id) {
 function openMenu() {
   view.selectedId = null;
   openSheet({
-    sig: () => `${s.speed}|${AMB.enabled}|${prefs.sfx}|${prefs.music}|${s.achieved.length}|${JSON.stringify(s.collection)}|${s.collectionSets}`,
+    sig: () => `${s.speed}|${s.testMode}|${s.level}|${AMB.enabled}|${prefs.sfx}|${prefs.music}|${s.achieved.length}|${JSON.stringify(s.collection)}|${s.collectionSets}`,
     render: () => `<h2>Menü</h2>
       <div><h3>Ses</h3>
         <div class="btns"><button type="button" class="btn ${prefs.sfx ? 'coin' : ''}" data-act="sfx">Efektler: ${prefs.sfx ? 'açık' : 'kapalı'}</button>
@@ -1051,6 +1052,10 @@ function openMenu() {
       <div><h3>Zaman hızı (test için)</h3>
         <div class="btns">${CONFIG.speeds.map(v => `<button type="button" class="btn ${s.speed === v ? 'coin' : ''}" data-act="speed" data-v="${v}">×${v}</button>`).join('')}</div>
         <p class="sub" style="margin:6px 0 0">×60'ta 1 dakika = 1 saat. Kontratları hızlıca denemek için.</p></div>
+      <div><h3>🧪 Test modu</h3>
+        <div class="btns"><button type="button" class="btn ${s.testMode ? 'coin' : ''}" data-act="testmode">Sınırsız para ve elmas: ${s.testMode ? 'açık' : 'kapalı'}</button></div>
+        <div class="btns" style="margin-top:6px">${[10, 20, 30].map(v => `<button type="button" class="btn ${s.level >= v ? 'coin' : ''}" data-act="testlevel" data-v="${v}">Seviye ${v}</button>`).join('')}</div>
+        <p class="sub" style="margin:6px 0 0">Açıkken para, elmas ve depodaki her mal hiç bitmez. Seviye 30'da bütün binalar açılır.</p></div>
       <div><h3>Nasıl oynanır</h3>${helpHtml()}</div>
       <div><h3>🏆 Başarımlar (${s.achieved.length}/${ACHIEVEMENTS.length})</h3>
         <div class="achs">${ACHIEVEMENTS.map(a => {
@@ -1067,6 +1072,8 @@ function openMenu() {
       <div><h3>Oyun</h3><button type="button" class="btn danger" data-act="reset">Baştan başla</button></div>
       <p class="sub" style="margin:0">Prototip 0.1 · ilerleme bu cihazda saklanır.</p>`,
     actions: {
+      testmode: () => { G.setTestMode(s, !s.testMode); toast(s.testMode ? 'Test modu açık: para ve elmas sınırsız' : 'Test modu kapalı'); panel.sigValue = ''; save(); },
+      testlevel: ds => { G.testSetLevel(s, Number(ds.v)); toast(`Seviye ${ds.v}`); panel.sigValue = ''; save(); },
       speed: ds => { s.speed = Number(ds.v); toast(`Zaman hızı ×${ds.v}`); save(); },
       motion: ds => setMotion(ds.v === '1'),
       sfx: () => { prefs.sfx = !prefs.sfx; A.setSfx(prefs.sfx); savePrefs(); panel.sigValue = ''; },

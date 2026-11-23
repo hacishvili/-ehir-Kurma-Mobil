@@ -1330,3 +1330,29 @@ export function formatMinutes(min) {
 export function formatMoney(n) {
   return Math.round(n).toLocaleString('tr-TR');
 }
+
+// ---------- Test modu: sınırsız para, elmas ve malzeme ----------
+export const TEST_MODE = { money: 1e9, diamonds: 99999, depoLevel: 8, goods: 1000 };
+
+export function setTestMode(s, on) {
+  s.testMode = !!on;
+  applyTestMode(s);
+  return ok({ on: s.testMode });
+}
+
+export function applyTestMode(s) {
+  if (!s.testMode) return;
+  if (s.money < TEST_MODE.money) s.money = TEST_MODE.money;
+  if (s.diamonds < TEST_MODE.diamonds) s.diamonds = TEST_MODE.diamonds;
+  if ((s.depoLevel || 0) < TEST_MODE.depoLevel) s.depoLevel = TEST_MODE.depoLevel;
+  for (const k of Object.keys(RESOURCES)) {
+    if ((s.inv[k] || 0) < TEST_MODE.goods) s.inv[k] = TEST_MODE.goods;
+  }
+}
+
+// Test için seviye atlama (her seviye için ayrı kutlama çıkarmaz)
+export function testSetLevel(s, level) {
+  s.level = Math.max(1, Math.round(level));
+  s.xp = 0;
+  return ok({ level: s.level });
+}

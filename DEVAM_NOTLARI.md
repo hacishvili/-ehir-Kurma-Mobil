@@ -205,3 +205,6 @@ Kullanıcı isteği: çeşitlilik az; seviyeyle değişen binalar, farklı yolla
 - 6 yeni test (toplam 40). Eski testlerde `rich()` artık depoyu doldurur; nehre yol testi köprü olarak güncellendi.
 
 **Kalan (faz 1'den):** ziyaretçiler (turist, müfettiş, gazeteci) yapılmadı. Faz 2: kalan binalar, yeni kiracılar, 20 hikaye, mevsimler.
+
+## 2026-11-23 — Test modu
+Menü → 🧪 Test modu: açıkken para 1 milyar, elmas 99.999, her mal en az 1000 adet tutulur (depo en az 8. seviye). Seviye 10/20/30 düğmeleri seviyeyi doğrudan ayarlar (`G.testSetLevel`). Kapatınca normal ekonomi döner; kazanılan para kalır. Sürüm 0.2.1 (kod 3).

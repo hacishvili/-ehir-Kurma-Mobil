@@ -537,3 +537,17 @@ test('özel yapı elmasla alınır; başarım ödülü verir', () => {
   assert.ok(s.achieved.includes('ilk-ev'));
   assert.ok(s.achieved.includes('ozel'));
 });
+
+test('test modu para, elmas ve malları bitirmez', () => {
+  const s = G.createState();
+  G.setTestMode(s, true);
+  assert.ok(s.money >= 1e9 && s.diamonds >= 99999);
+  s.money = 5; s.diamonds = 0; s.inv.celik = 0;
+  G.applyTestMode(s);
+  assert.ok(s.money >= 1e9 && s.diamonds >= 99999 && s.inv.celik >= 1000);
+  G.setTestMode(s, false);
+  s.money = 5; G.applyTestMode(s);
+  assert.equal(s.money, 5);
+  G.testSetLevel(s, 30);
+  assert.equal(s.level, 30);
+});
