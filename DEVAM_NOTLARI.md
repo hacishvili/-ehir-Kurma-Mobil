@@ -290,3 +290,11 @@ Görseller (Claude, ~50 kredi): kaynaklar `img/kaynak/`, doğa ve mevsim ağaçl
   Bina kartında ve yerleştirirken "↔️ Döndür".
 - Toplu yıkım: İnşa et → "🧨 Toplu yıkım" (mode 'demolish'). Dokun/sürükle seç-bırak, yıkılacaklar soluk + kırmızı + ❌.
   "Yık (n)" iki dokunuşla onaylanır; game.js sellMany (yollar dahil, geri ödeme ve birikmiş kira toplanır).
+
+## Yol bağlantıları oyuncunun elinde
+- Yan yana iki yol artık kendiliğinden bağlanmaz. Bağlantılar s.roadLinks ("x,y|x2,y2", sırasız) — game.js
+  setRoadLink/hasRoadLink; linkOk bağlantı ister (cadde-cadde ve kavşak halkası hep bağlı, kavşağa yalnız kol ucundan).
+- Eski kayıtta roadLinks yoksa yüklenirken o anda komşu olan bütün yol çiftleri bağlı sayılır (legacyLinks), ağ bozulmaz.
+- Yol yıkılınca / cadde kaldırılınca o karelerin bağlantıları silinir (dropLinks).
+- Yol çubuğu: ✏️ Çiz (dokun = tek kare, bağlantısız; sürükle = geçilen kareler bağlanır, atlanan kareler de doldurulur),
+  🔗 Bağlantı (yoldan yanındaki yola sürükle: ilk geçişe göre bağlar ya da keser), 🧽 Sil.

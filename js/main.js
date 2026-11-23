@@ -15,7 +15,7 @@ const PREF_KEY = 'emlak-sehri-ayar-v1';
 const view = { selectedId: null, placement: null, floaters: [] };
 let s = null;
 let mode = 'normal'; // normal | place | road | demolish
-let roadErase = false;
+let roadTool = 'draw'; // yol modunda araç: draw (çiz) | link (bağlantı kur/kes) | erase (sil)
 const demolishSel = new Set(); // toplu yıkımda seçilen yapılar
 let buildCat = null; // inşa listesinde açık bölüm (null = bölümler)
 let roadType = 'yol';
@@ -273,8 +273,8 @@ function onDown(e) {
   // Yol modunda: yoldan (ya da ana caddeden) başlayan sürükleme yol çizer/siler,
   // boş yerden başlayan sürükleme haritayı kaydırır, dokunmak tek kare yol koyar.
   if (mode === 'road' && ((b && G.isRoadType(b.type)) || G.isAvenue(tx, ty))) {
-    gesture = { kind: 'road', sx: x, sy: y, last: `${tx},${ty}`, first: true };
-    if (roadErase) paintRoad(tx, ty, true);
+    gesture = { kind: 'road', sx: x, sy: y, last: [tx, ty], linkOn: null };
+    if (roadTool === 'erase') paintRoad(tx, ty, true);
     return;
   }
   // Toplu yıkım: yapıya dokunmak seçer/bırakır; yapıdan başlayan sürükleme geçtiği yapılara aynısını yapar
@@ -335,8 +335,15 @@ function onMove(e) {
   }
   if (gesture.kind === 'road') {
     const [tx, ty] = R.screenToTile(x, y);
-    const key = `${tx},${ty}`;
-    if (key !== gesture.last) { gesture.last = key; paintRoad(tx, ty, false); }
+    // hızlı sürüklemede atlanan kareler de tek tek geçilsin (önce x, sonra y yönünde)
+    let [cx, cy] = gesture.last;
+    while (cx !== tx || cy !== ty) {
+      const nx = cx !== tx ? cx + Math.sign(tx - cx) : cx;
+      const ny = cx !== tx ? cy : cy + Math.sign(ty - cy);
+      roadStep(cx, cy, nx, ny);
+      cx = nx; cy = ny;
+    }
+    gesture.last = [tx, ty];
     return;
   }
   if (gesture.kind === 'ghost') {
@@ -353,8 +360,10 @@ function onUp(e) {
     if (mode === 'normal' && R.hitVisitor(gesture.sx, gesture.sy)) { A.play('tap'); openVisitor(); }
     else {
       const [tx, ty] = R.screenToTile(gesture.sx, gesture.sy);
-      if (mode === 'road') paintRoad(tx, ty, true);
-      else if (mode !== 'demolish') onTap(tx, ty);
+      if (mode === 'road') {
+        if (roadTool === 'link') toast('Bağlamak ya da bağlantıyı kesmek için bir yoldan yanındaki yola sürükle.');
+        else paintRoad(tx, ty, true);
+      } else if (mode !== 'demolish') onTap(tx, ty);
     }
   }
   if (pointers.size === 0 || (gesture && gesture.kind === 'pinch')) gesture = null;
@@ -409,7 +418,8 @@ function deselect() {
 function paintRoad(tx, ty, isFirst) {
   if (!G.inBounds(tx, ty)) return;
   const b = G.buildingAt(s, tx, ty);
-  if (roadErase) {
+  if (roadTool === 'link') return;
+  if (roadTool === 'erase') {
     if (b && G.isRoadType(b.type)) G.sell(s, b.id);
     else if (G.isAvenue(tx, ty)) { const r = G.removeAvenue(s, tx, ty); if (!r.ok && isFirst) toast(r.msg, true); }
     return;
@@ -428,6 +438,22 @@ function paintRoad(tx, ty, isFirst) {
   if (!r.ok && isFirst) toast(r.msg, true);
 }
 
+// Sürüklerken bir kareden yanındakine geçiş: çizerken iki yol birbirine bağlanır,
+// bağlantı aracında ilk geçişe göre bağlar ya da keser, silerken yeni kareyi siler
+function roadStep(px, py, tx, ty) {
+  if (!G.inBounds(tx, ty)) return;
+  if (roadTool === 'erase') { paintRoad(tx, ty, false); return; }
+  if (roadTool === 'draw') {
+    paintRoad(tx, ty, false);
+    G.setRoadLink(s, px, py, tx, ty, true); // yol olmayan kare ya da kavşak köşesiyse sessizce olmaz
+    return;
+  }
+  if (gesture.linkOn === null) gesture.linkOn = !G.hasRoadLink(s, px, py, tx, ty);
+  const r = G.setRoadLink(s, px, py, tx, ty, gesture.linkOn);
+  if (!r.ok) { if (!gesture.warned) toast(r.msg, true); gesture.warned = true; }
+  else if (r.changed) buzz(8);
+}
+
 function setMode(m) {
   mode = m;
   $('btnRoad').classList.toggle('on', m === 'road');
@@ -435,6 +461,7 @@ function setMode(m) {
   $('placebar').hidden = m === 'normal';
   $('placeOk').classList.toggle('danger', m === 'demolish');
   $('placeOk').classList.toggle('primary', m !== 'demolish');
+  $('placeCancel').style.display = m === 'road' ? 'none' : ''; // yol modunda tek düğme: Bitti
   if (m !== 'place') view.placement = null;
   view.grid = m !== 'normal';
   demolishSel.clear();
@@ -491,20 +518,29 @@ function confirmDemolish() {
 }
 
 function updateRoadBar() {
+  const tools = [['draw', '✏️ Çiz'], ['link', '🔗 Bağlantı'], ['erase', '🧽 Sil']]
+    .map(([id, label]) => `<button type="button" class="chip ${roadTool === id ? 'on' : ''}" data-tool="${id}">${label}</button>`).join('');
   const types = Object.entries(BUILDINGS).filter(([, d]) => d.cat === 'yol');
   const chips = types.map(([id, d]) => {
     const locked = d.unlock > s.level;
     return `<button type="button" class="chip road-type ${roadType === id ? 'on' : ''}" data-road="${id}" ${locked ? 'disabled' : ''}>${d.icon} ${d.name}${locked ? ` · Sv ${d.unlock}` : d.cost ? ` · ${d.cost}` : ' · bedava'}</button>`;
   }).join('');
-  $('placeInfo').innerHTML = `<b>${roadErase ? 'Yol sil' : 'Yol yap'}</b><div class="road-types">${chips}</div>
-    <span>${roadErase ? 'Silmek için yola ya da ana caddeye dokun, ya da üstünden sürükle. Kaldırılan cadde karesi, üstüne yol yapınca geri gelir.' : G.sizeOf(roadType) > 1
-      ? 'Döner kavşak 3×3 kare kaplar: ortası olacak kareye dokun. Yollar yalnız dört kolun ucuna bağlanır.'
-      : 'Dokununca yol konur. Yoldan ya da caddeden başlayıp sürükleyerek çiz; boş yerden sürüklersen harita kayar. Binalar bağlı bir yola komşu olmalı. Nehrin üstüne yol köprü olur.'}</span>`;
+  const hint = roadTool === 'erase'
+    ? 'Silmek için yola ya da ana caddeye dokun, ya da üstünden sürükle. Kaldırılan cadde karesi, üstüne yol yapınca geri gelir.'
+    : roadTool === 'link'
+      ? 'Bir yoldan yanındaki yola sürükle: bağlı değilse bağlanır, bağlıysa bağlantı kesilir. Yolun resmi hangi yöne devam ediyorsa o yöne bağlıdır.'
+      : G.sizeOf(roadType) > 1
+        ? 'Döner kavşak 3×3 kare kaplar: ortası olacak kareye dokun. Bağlamak için yolu kolun ucuna sürükle.'
+        : 'Dokununca tek kare yol konur, hiçbir yere bağlanmaz. Yoldan ya da caddeden başlayıp sürüklersen geçtiğin kareler birbirine bağlanır. Boş yerden sürüklersen harita kayar.';
+  $('placeInfo').innerHTML = `<div class="road-types">${tools}</div>${roadTool === 'draw' ? `<div class="road-types">${chips}</div>` : ''}<span>${hint}</span>`;
   for (const el of $('placeInfo').querySelectorAll('[data-road]')) {
-    el.onclick = () => { roadType = el.dataset.road; roadErase = false; updateRoadBar(); };
+    el.onclick = () => { roadType = el.dataset.road; updateRoadBar(); };
   }
-  $('placeCancel').textContent = roadErase ? 'Çizmeye dön' : 'Yol sil';
+  for (const el of $('placeInfo').querySelectorAll('[data-tool]')) {
+    el.onclick = () => { roadTool = el.dataset.tool; updateRoadBar(); };
+  }
   $('placeOk').textContent = 'Bitti';
+  $('placeOk').disabled = false;
 }
 
 // ---------- Yerleştirme ----------
@@ -576,7 +612,7 @@ function updatePlacebar() {
 }
 
 function confirmPlacement() {
-  if (mode === 'road') { roadErase = false; setMode('normal'); return; }
+  if (mode === 'road') { roadTool = 'draw'; setMode('normal'); return; }
   if (mode === 'demolish') { confirmDemolish(); return; }
   const pl = view.placement;
   if (!pl || !pl.valid) return;
@@ -602,7 +638,7 @@ function confirmPlacement() {
 }
 
 function cancelPlacement() {
-  if (mode === 'road') { roadErase = !roadErase; updateRoadBar(); return; }
+  if (mode === 'road') { roadTool = 'draw'; setMode('normal'); return; }
   if (mode === 'demolish') { setMode('normal'); return; }
   const id = view.placement?.moveId;
   setMode('normal');
@@ -642,7 +678,7 @@ function syncHistory() {
 function goBack() {
   if (!$('modal').hidden) return; // açılış ve ödül pencereleri kendi düğmesiyle kapanır
   if (mode === 'place' || mode === 'demolish') { cancelPlacement(); return; }
-  if (mode === 'road') { roadErase = false; setMode('normal'); return; }
+  if (mode === 'road') { roadTool = 'draw'; setMode('normal'); return; }
   if (panel && panel.back) { panel.back(); return; }
   if (panel) deselect();
 }
@@ -1475,7 +1511,7 @@ function bindUi() {
   $('sheetBody').addEventListener('click', onSheetClick);
   $('sheetClose').addEventListener('click', deselect);
   $('btnBuild').addEventListener('click', () => { if (mode === 'road') setMode('normal'); openBuild(); });
-  $('btnRoad').addEventListener('click', () => { roadErase = false; setMode(mode === 'road' ? 'normal' : 'road'); });
+  $('btnRoad').addEventListener('click', () => { roadTool = 'draw'; setMode(mode === 'road' ? 'normal' : 'road'); });
   $('btnCollect').addEventListener('click', () => {
     const total = G.collectAll(s);
     toast(total ? `+${G.formatMoney(total)} 🪙 toplandı` : 'Şu an toplanacak bir şey yok.');

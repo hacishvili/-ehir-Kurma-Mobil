@@ -14,6 +14,7 @@ function local(id) {
     affectedByType: xy(1, 2), isRoadConnected: xy(1, 2), terrainAt: xy(0, 1), isAvenue: xy(0, 1),
     nearTerrain: xy(0, 1), inRadius: xy(1, 2),
     buyParcel: (s, px, py) => [s, px + px0, py + py0],
+    setRoadLink: (s, x, y, nx, ny, on) => [s, x + ox, y + oy, nx + ox, ny + oy, on],
     parcelCost: (s, px = 1, py = 2) => [s, px + px0, py + py0],
   };
   return new Proxy(G0, { get: (t, k) => (shift[k] ? (...a) => t[k](...shift[k](...a)) : t[k]) });
@@ -41,7 +42,13 @@ test('ana caddeye komşu ev bağlıdır, uzaktaki değil', () => {
   // yol ile bağla
   G.build(s, 'yol', AX + 2, 6);
   G.build(s, 'yol', AX + 1, 6);
+  assert.equal(G.isConnected(s, s.buildings[far.id]), false, 'yan yana koymak bağlamaz');
+  assert.ok(G.setRoadLink(s, AX, 6, AX + 1, 6, true).ok);
+  assert.ok(G.setRoadLink(s, AX + 1, 6, AX + 2, 6, true).ok);
   assert.equal(G.isConnected(s, s.buildings[far.id]), true);
+  // bağlantı kesilince kopar
+  G.setRoadLink(s, AX + 1, 6, AX + 2, 6, false);
+  assert.equal(G.isConnected(s, s.buildings[far.id]), false);
 });
 
 test('ana caddeye ve kilitli arsaya bina yapılamaz', () => {
@@ -199,6 +206,7 @@ test('2x2 bina dört kare kaplar, kenarından yola bağlanır ve etkisi kenardan
   assert.equal(G.build(s, 'ev', 8, 7).ok, false, 'dolu kareye bina yapılamaz');
   assert.equal(G.isConnected(s, s.buildings[r.id]), false);
   G.build(s, 'yol', 6, 7); // caddeye (x=5) komşu, AVM'nin sol kenarına komşu
+  G.setRoadLink(s, 5, 7, 6, 7, true);
   assert.equal(G.isConnected(s, s.buildings[r.id]), true);
   // radius 3: alanın sağ kenarı x=8, 3 kare ötesi x=11 etkilenir, 12 harita dışı
   assert.ok(G.inRadius(s.buildings[r.id], 11, 7, 3));
@@ -704,6 +712,9 @@ test('döner kavşak 3x3 kaplar, yalnız dört kolun ucundan bağlanır', () => 
   const r = G.build(s, 'kavsak', AX + 1, 4); // 6..8 x 4..6, sol kolu (6,5) caddeye komşu
   assert.ok(r.ok, r.msg);
   assert.equal(G.buildingAt(s, 8, 6).id, r.id);
+  assert.equal(G.isRoadConnected(s, 6, 5), false, 'bağlanmadan bağlı değil');
+  assert.equal(G.setRoadLink(s, 5, 4, 6, 4, true).ok, false, 'köşeden bağlanamaz');
+  assert.ok(G.setRoadLink(s, 5, 5, 6, 5, true).ok);
   assert.equal(G.isRoadConnected(s, 6, 5), true, 'sol kol caddeye bağlı');
   assert.equal(G.isRoadConnected(s, 7, 5), false, 'ortadaki havuz yol değil');
   assert.equal(link(5, 5, 6, 5), true);
@@ -711,6 +722,8 @@ test('döner kavşak 3x3 kaplar, yalnız dört kolun ucundan bağlanır', () => 
   assert.ok(G.build(s, 'yol', 9, 4).ok);
   assert.equal(G.isRoadConnected(s, 9, 4), false, 'köşenin yanındaki yol bağlı değil');
   assert.ok(G.build(s, 'yol', 9, 5).ok);
+  G.setRoadLink(s, 9, 4, 9, 5, true);
+  G.setRoadLink(s, 8, 5, 9, 5, true);
   assert.equal(G.isRoadConnected(s, 9, 4), true, 'sağ kola bağlanınca bağlı');
 });
 
@@ -756,4 +769,23 @@ test('bina döndürülür (kayıtta kalır); toplu yıkım hepsini satar', () =>
   assert.ok(!s.buildings[a] && !s.buildings[b] && !s.buildings[r]);
   assert.ok(s.money >= money + expect);
   assert.equal(G.sellMany(s, []).ok, false);
+});
+
+test('yol bağlantıları: kayıtta kalır, yol yıkılınca silinir, eski kayıtta komşular bağlı sayılır', () => {
+  const s = rich();
+  G.buyParcel(s, 1, 1);
+  const r = G.build(s, 'yol', AX + 1, 6).id;
+  G.setRoadLink(s, AX, 6, AX + 1, 6, true);
+  assert.equal(G.isRoadConnected(s, AX + 1, 6), true);
+  const back = G.deserialize(G.serialize(s));
+  assert.equal(G.isRoadConnected(back, AX + 1, 6), true, 'bağlantı kayıtta kalır');
+  G.sell(s, r);
+  assert.equal(s.roadLinks.length, 0, 'yol yıkılınca bağlantısı da gider');
+  G.build(s, 'yol', AX + 1, 6);
+  assert.equal(G.isRoadConnected(s, AX + 1, 6), false, 'aynı yere yeni yol bağlı gelmez');
+  // eski kayıt (bağlantı listesi yok): yan yana yollar bağlı sayılır
+  const old = JSON.parse(G.serialize(s));
+  delete old.roadLinks;
+  const s2 = G.deserialize(JSON.stringify(old));
+  assert.equal(G.isRoadConnected(s2, AX + 1, 6), true);
 });

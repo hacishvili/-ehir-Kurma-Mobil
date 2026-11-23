@@ -65,7 +65,67 @@ export function hydrate(s) {
   Object.defineProperty(s, '_cache', { value: { version: -1 }, writable: true, enumerable: false });
   Object.defineProperty(s, 'events', { value: [], writable: true, enumerable: false });
   Object.defineProperty(s, 'version', { value: 0, writable: true, enumerable: false });
+  // Yol bağlantıları oyuncunun elinde: yan yana iki yol yalnız bağlandıysa birbirine geçer.
+  // Eski kayıtta liste yok: o anda kendiliğinden bağlı olan çiftler aynen saklanır (yol ağı bozulmaz).
+  if (!Array.isArray(s.roadLinks)) s.roadLinks = legacyLinks(s);
+  Object.defineProperty(s, '_links', { value: new Set(s.roadLinks), writable: true, enumerable: false, configurable: true });
+  s._cache.version = -1; // bağlantılarla yeniden hesaplansın
   return s;
+}
+
+// İki komşu karenin bağlantı anahtarı (sıra önemsiz)
+function linkKey(x, y, nx, ny) {
+  return y < ny || (y === ny && x < nx) ? `${x},${y}|${nx},${ny}` : `${nx},${ny}|${x},${y}`;
+}
+
+// Eski kurala göre (komşu her yol bağlı) bağlı olan çiftler
+function legacyLinks(s) {
+  const grid = cache(s).grid, out = [];
+  const n = CONFIG.gridSize;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    for (const [dx, dy] of [[1, 0], [0, 1]]) {
+      const nx = x + dx, ny = y + dy;
+      if (isAvenue(x, y) && isAvenue(nx, ny)) continue;
+      if (linkOk(grid, x, y, nx, ny, null)) out.push(linkKey(x, y, nx, ny));
+    }
+  }
+  return out;
+}
+
+function saveLinks(s) {
+  s.roadLinks = [...s._links];
+}
+
+// Karelere dokunan bağlantıları sil (yol yıkılınca, cadde kaldırılınca)
+function dropLinks(s, tiles) {
+  const set = new Set(tiles.map(([x, y]) => `${x},${y}`));
+  let any = false;
+  for (const k of [...s._links]) {
+    const [a, b] = k.split('|');
+    if (set.has(a) || set.has(b)) { s._links.delete(k); any = true; }
+  }
+  if (any) saveLinks(s);
+}
+
+// İki komşu yol karesini bağla ya da bağlantıyı kes
+export function setRoadLink(s, x, y, nx, ny, on) {
+  if (Math.abs(x - nx) + Math.abs(y - ny) !== 1) return fail('Yalnız yan yana iki kare bağlanır.');
+  const grid = cache(s).grid;
+  if (!isRoadTile(grid, x, y) || !isRoadTile(grid, nx, ny)) return fail('İki karede de yol olmalı.');
+  if (isAvenue(x, y) && isAvenue(nx, ny)) return fail('Ana cadde kendi içinde hep bağlı.');
+  const a = roundaboutOf(grid, x, y), c = roundaboutOf(grid, nx, ny);
+  if (a && a === c) return fail('Döner kavşak kendi içinde hep bağlı.');
+  if ((a && !armOk(a, x, y, nx, ny)) || (c && !armOk(c, nx, ny, x, y))) return fail('Döner kavşağa yalnız kolların ucundan bağlanılır.');
+  const k = linkKey(x, y, nx, ny);
+  if (on === s._links.has(k)) return ok({ changed: false });
+  if (on) s._links.add(k); else s._links.delete(k);
+  saveLinks(s);
+  changed(s);
+  return ok({ changed: true });
+}
+
+export function hasRoadLink(s, x, y, nx, ny) {
+  return s._links.has(linkKey(x, y, nx, ny));
 }
 
 export function serialize(s) {
@@ -214,6 +274,7 @@ export function removeAvenue(s, x, y) {
   const k = `${x},${y}`;
   s.removedAvenue.push(k);
   removedAvenue.add(k);
+  dropLinks(s, [[x, y]]);
   syncGrids();
   changed(s);
   return ok();
@@ -318,7 +379,7 @@ function cache(s) {
     }
   }
   c.grid = grid;
-  c.connected = computeConnected(grid);
+  c.connected = computeConnected(grid, s._links);
   c.bonus = new Map();
   c.version = s.version;
   return c;
@@ -351,17 +412,19 @@ function armOk(k, x, y, ox, oy) {
 }
 
 // İki komşu yol karesi arasında geçiş var mı (araba ve bağlantı için)
-function linkOk(grid, x, y, nx, ny) {
+// links: oyuncunun kurduğu bağlantılar (null = eski kural, komşu her yol bağlı)
+function linkOk(grid, x, y, nx, ny, links) {
   if (!isRoadTile(grid, x, y) || !isRoadTile(grid, nx, ny)) return false;
+  if (isAvenue(x, y) && isAvenue(nx, ny)) return true; // ana cadde kendi içinde
   const a = roundaboutOf(grid, x, y), c = roundaboutOf(grid, nx, ny);
-  if (a && a === c) return true;
+  if (a && a === c) return true; // kavşağın halkası
   if (a && !armOk(a, x, y, nx, ny)) return false;
   if (c && !armOk(c, nx, ny, x, y)) return false;
-  return true;
+  return !links || links.has(linkKey(x, y, nx, ny));
 }
 
 export function roadLink(s, x, y, nx, ny) {
-  return linkOk(cache(s).grid, x, y, nx, ny);
+  return linkOk(cache(s).grid, x, y, nx, ny, s._links);
 }
 
 // (x, y) bir döner kavşağın parçasıysa o yapı
@@ -370,7 +433,7 @@ export function roundaboutAt(s, x, y) {
 }
 
 // Ana caddeden başlayıp yollar üzerinden ulaşılabilen kareleri bulur.
-function computeConnected(grid) {
+function computeConnected(grid, links) {
   const n = CONFIG.gridSize;
   const roadOk = Array.from({ length: n }, () => new Array(n).fill(false));
   const queue = [];
@@ -386,7 +449,7 @@ function computeConnected(grid) {
     const [x, y] = queue.pop();
     for (const [dx, dy] of dirs) {
       const nx = x + dx, ny = y + dy;
-      if (linkOk(grid, x, y, nx, ny) && !roadOk[ny][nx]) {
+      if (linkOk(grid, x, y, nx, ny, links) && !roadOk[ny][nx]) {
         roadOk[ny][nx] = true;
         queue.push([nx, ny]);
       }
@@ -1074,6 +1137,11 @@ export function sell(s, id) {
   const refund = sellValue(s, b);
   s.money += refund;
   delete s.buildings[id];
+  if (isRoadType(b.type)) {
+    const n = sizeOf(b), tiles = [];
+    for (let dy = 0; dy < n; dy++) for (let dx = 0; dx < n; dx++) tiles.push([b.x + dx, b.y + dy]);
+    dropLinks(s, tiles);
+  }
   changed(s);
   return ok({ refund, collected });
 }
