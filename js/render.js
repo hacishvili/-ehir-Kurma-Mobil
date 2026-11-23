@@ -35,6 +35,8 @@ export const NATURE = {
   kaya: { w: 0.5, sway: 0, weight: 5 },
   cicekler: { w: 0.48, sway: 0, weight: 6 },
 };
+// Ağaçlar evlerle orantılı kalsın: tek katlı ev bir karenin tamamını kaplar, ağaç onun yarısı kadar
+const TREE_SCALE = 0.5;
 const NATURE_TOTAL = Object.values(NATURE).reduce((a, n) => a + n.weight, 0);
 // Mevsime göre ağaç görünümü: tür → img/doga/<görsel>. null: o mevsimde çizilmez
 const SEASON_TREES = {
@@ -723,25 +725,26 @@ export function createRenderer(canvas) {
         if (inMap) {
           const ter = G.terrainAt(x, y);
           if (G.isUnlocked(s, x, y) || G.isAvenue(x, y) || (ter && !TERRAIN[ter].buildable) || ter === 'kum') continue;
-          count = hash(x, y) < 0.3 ? 1 : 0; // kilitli arsada seyrek: nehir ve arsa sınırları görünsün
+          count = hash(x, y) < 0.35 ? 1 : 0; // kilitli arsada yalnız alçak çalı ve çiçek: arsa görünsün, dokunması kolay olsun
         } else {
           if (outsideTerrain(x, y) || outsideAvenue(x, y) || outsideAvenue(x - 1, y) || outsideAvenue(x + 1, y)) continue;
           // kenardan uzaklaştıkça orman sıklaşır
           const dist = Math.max(-x, -y, x - n + 1, y - n + 1);
           const dens = Math.min(0.75, dist < 2 ? 0.1 : 0.15 + (dist - 2) * 0.12);
           const h = hash(x, y);
-          count = h < dens ? (h < dens * 0.45 ? 2 : 1) : 0;
+          count = h < dens ? (h < dens * 0.45 ? 3 : 2) : 0; // ağaçlar küçük, kare başına daha çok
         }
         for (let k = 0; k < count; k++) {
           const fx = x + 0.2 + hash(x, y, 2 + k) * 0.6;
           const fy = y + 0.2 + hash(x, y, 5 + k) * 0.6;
           let pick = hash(x, y, 13 + k) * NATURE_TOTAL, kind = 'kuknar';
           for (const [name, nd] of Object.entries(NATURE)) { pick -= nd.weight; if (pick < 0) { kind = name; break; } }
+          if (inMap) kind = hash(x, y, 17) < 0.6 ? 'cali' : 'cicekler';
           const alt = SEASON_TREES[G.season()]?.[kind];
           if (alt === null) continue;
           const img = sprites[`doga-${alt || kind}`] || sprites[`doga-${kind}`];
           if (!img) continue;
-          const size = (0.62 + hash(x, y, 9 + k) * 0.35) * (inMap ? 0.85 : 1);
+          const size = (0.62 + hash(x, y, 9 + k) * 0.35) * TREE_SCALE;
           const [sx, sy] = toScreen(fx, fy);
           const w = NATURE[kind].w * TW * cam.z * size;
           const hgt = w * img.naturalHeight / img.naturalWidth;
