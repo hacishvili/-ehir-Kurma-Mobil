@@ -256,3 +256,10 @@ Görseller (Claude, ~50 kredi): kaynaklar `img/kaynak/`, doğa ve mevsim ağaçl
 - Araba görselleri için 12 prompt: `docs/araba-gorselleri-promptlar.pdf` (6 araç × ön/arka; sola gidenler aynalanacak). Görseller `img/araclar/` klasörüne gelecek.
 - **Ana cadde ve köprü görselleri**: `cadde-duz.png` kaldırımlı, orta şeritli cadde; araç ondan 16 `cadde-*` parçası üretir (beyaz/krem arka plan da silinir, yol kenara değmiyorsa yalnız yollu satırlar alınır). Köprüler (`cadde-kopru`, `yol-kopru`, `yol-tas-kopru`): `BRIDGES` tablosundaki yüzey sütunlarına göre ölçeklenir, yüzey karadaki yolla aynı genişlikte, korkuluklar suyun üstüne taşar. Oyunda nehirdeki kare kuzeye ya da güneye bağlıysa köprü görseli (yan bağlantılar yok sayılır), değilse kodla çizilen köprü.
 - Kullanılmayan: `kullanilmayan-cadde-t/dortyol` (genişlik tutmuyor, üstünde "50%" yazısı var), `bulvar-kopru` (bulvar parçaları gelince), `donel-kavsak-capraz` (kolları köşelere gidiyor, kareye oturmuyor).
+
+## Araba görselleri ve yol modunda kaydırma
+- Arabalar artık görselle çiziliyor: sedan, hatchback, taksi, dolmuş (img/araclar, kaynakları img/kaynak/araclar).
+  `python3 tools/araba_hazirla.py` pembe arka planı siler. Sola giden yönler aynalanır; sedan ve hatchback
+  hue-rotate ile renklendirilir. Görsel yüklenmezse eski kodla çizim devreye girer. Panelvan ve pikap görseli yok.
+- Yol modu: boş yerden sürükleme haritayı kaydırır, dokunmak tek kare yol koyar, yoldan/caddeden başlayan sürükleme yol çizer.
+- Bekleyenler: bulvar düz + köprü, 3x3 döner kavşak görselleri (kullanıcı yükleyecek).

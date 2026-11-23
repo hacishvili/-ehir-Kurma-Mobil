@@ -1,0 +1,6 @@
+Araba görsellerinin kaynakları. Dosya adı: <tür>-<on|arka>.png
+  on   = sağ-aşağı giden araba (önü ve sağ yanı görünür)
+  arka = sağ-yukarı giden araba (arkası ve sağ yanı görünür)
+Sola giden yönler oyunda aynalanır. Yeni dosya ekleyince:
+  python3 tools/araba_hazirla.py
+Yeni bir tür eklenirse js/ambient.js içindeki CAR_KINDS listesine de yazılmalı.

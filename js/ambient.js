@@ -7,6 +7,14 @@ import * as G from './game.js';
 const CAR_COLORS = ['#e5534b', '#2f7de1', '#f2b134', '#ffffff', '#3a3f4b', '#2fbf71', '#a259d9'];
 const CLOTHES = ['#e5534b', '#2f7de1', '#f2b134', '#2fbf71', '#a259d9', '#ff8fb1', '#3a3f4b'];
 const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+// Araba görselleri (img/araclar/<tür>-<on|arka>.png). w: yakınlaştırma 1'deki ekran genişliği,
+// n: seçilme ağırlığı, hues: renk çeşitleri (derece, hue-rotate). Görsel yüklenmezse kodla çizilir.
+const CAR_KINDS = {
+  sedan: { w: 23, n: 4, hues: [0, 200, 130, 250] },
+  hatchback: { w: 21, n: 4, hues: [0, 150, 170, 300] },
+  taksi: { w: 23, n: 2, hues: [0] },
+  dolmus: { w: 28, n: 1, hues: [0] },
+};
 const MAX_PARTICLES = 220;
 
 // Aynı karede hep aynı sonucu veren basit karıştırıcı (ağaçların yeri için)
@@ -27,6 +35,32 @@ export function createAmbient(R) {
   let enabled = true;
 
   const rnd = arr => arr[Math.floor(Math.random() * arr.length)];
+
+  // Araba görsellerini yükle; renk çeşitlerini bir kez boyayıp sakla
+  const carImgs = {};
+  for (const [kind, k] of Object.entries(CAR_KINDS)) {
+    for (const view of ['on', 'arka']) {
+      const img = new Image();
+      img.onload = () => {
+        carImgs[`${kind}-${view}`] = k.hues.map(h => {
+          if (!h) return img;
+          const c = document.createElement('canvas');
+          c.width = img.width; c.height = img.height;
+          const g = c.getContext('2d');
+          if (!('filter' in g)) return img;
+          g.filter = `hue-rotate(${h}deg)`;
+          g.drawImage(img, 0, 0);
+          return c;
+        });
+      };
+      img.src = `img/araclar/${kind}-${view}.png`;
+    }
+  }
+  const carKindPool = Object.entries(CAR_KINDS).flatMap(([kind, k]) => Array(k.n).fill(kind));
+  function newCar() {
+    const kind = rnd(carKindPool);
+    return { color: rnd(CAR_COLORS), kind, hue: Math.floor(Math.random() * CAR_KINDS[kind].hues.length), speed: (kind === 'dolmus' ? 0.75 : 0.9) + Math.random() * 0.6 };
+  }
   const isRoad = (s, x, y) => G.inBounds(x, y) && G.isRoadConnected(s, x, y);
   const onEdge = (x, y) => x === 0 || y === 0 || x === CONFIG.gridSize - 1 || y === CONFIG.gridSize - 1;
 
@@ -156,7 +190,25 @@ export function createAmbient(R) {
   }
 
   function drawCar(a) {
-    const { fx, fy, dx, dy } = pose(a, 0.17);
+    const { fx, fy, dx, dy } = pose(a, 0.14);
+    // sağ-aşağı (x+) 'on', sağ-yukarı (y-) 'arka'; sola gidenler aynalanır
+    const imgs = carImgs[`${a.kind}-${dx > 0 || dy > 0 ? 'on' : 'arka'}`];
+    if (imgs) {
+      const img = imgs[a.hue] || imgs[0];
+      const flip = dx < 0 || dy > 0;
+      const z = R.cam.z, w = CAR_KINDS[a.kind].w * z, h = w * img.height / img.width;
+      const [x, y] = scr(fx, fy, 0);
+      ctx.fillStyle = 'rgba(20,30,20,0.28)';
+      ctx.beginPath();
+      ctx.ellipse(x, y + 1 * z, w * 0.42, w * 0.2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.save();
+      ctx.translate(x, y);
+      if (flip) ctx.scale(-1, 1);
+      ctx.drawImage(img, -w / 2, -h * 0.75, w, h);
+      ctx.restore();
+      return;
+    }
     const L = 0.17, W = 0.09, H = 5;
     const px = -dy, py = dx;
     const corners = [
@@ -305,7 +357,7 @@ export function createAmbient(R) {
     if (!enabled) { cars.length = 0; people.length = 0; particles.length = 0; return; }
     sync(s);
     const want = targetCounts(s);
-    while (cars.length < want.cars && roads.length) spawnWalker(s, cars, { color: rnd(CAR_COLORS), speed: 0.9 + Math.random() * 0.6 });
+    while (cars.length < want.cars && roads.length) spawnWalker(s, cars, newCar());
     while (people.length < want.people && roads.length) spawnWalker(s, people, { color: rnd(CLOTHES), speed: 0.22 + Math.random() * 0.12, phase: Math.random() * 6 });
     cars.length = Math.min(cars.length, want.cars);
     people.length = Math.min(people.length, want.people);
@@ -319,7 +371,7 @@ export function createAmbient(R) {
     if (!enabled) return [];
     const out = [];
     for (const c of cars) {
-      const { fx, fy } = pose(c, 0.17);
+      const { fx, fy } = pose(c, 0.14);
       out.push({ key: fx + fy, kx: fx, draw: () => drawCar(c) });
     }
     for (const p of people) {
