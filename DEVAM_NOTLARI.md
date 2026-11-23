@@ -2,6 +2,8 @@
 
 Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında kodu hatırlamaz; bir sonraki oturum buradan başlar.
 
+**Çalışma kuralı:** APK yalnız kullanıcı "APK oluştur" deyince derlenir ve gönderilir. Değişiklikler commit/push edilir, tarayıcı önizlemesi güncellenir; APK kendiliğinden yapılmaz.
+
 ## 2026-11-23 — Prototip 0.1
 
 **Yapılan**
