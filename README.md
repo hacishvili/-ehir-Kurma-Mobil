@@ -19,6 +19,7 @@ Prototipte olanlar:
 - **Yol kuralı:** binalar ana caddeye bağlı bir yola komşu olmalı
 - **Bedava taşıma**, yerleştirirken canlı bonus önizlemesi
 - Sürükleyerek toplama, "sen yokken" özeti, danışman görevleri, seviye
+- Canlı şehir: yollarda arabalar, kaldırımda insanlar, sallanan ağaçlar, bacadan duman, su parıltısı, kira toplanınca saçılan paralar (Menü'den kapatılabilir)
 - Test için zaman hızlandırma (Menü → ×10 / ×60)
 - İlerleme telefonda saklanır (sunucu yok)
 
@@ -49,6 +50,7 @@ Oyun kuralları (bağlantı, etki alanı, kira, memnuniyet, kayıt) tarayıcıs�
 | `js/data.js` | Bütün rakamlar: bina fiyatları, kiralar, etki alanları, kiracılar, görevler. Denge ayarı yalnız burada yapılır. |
 | `js/game.js` | Oyun kuralları (ekrandan bağımsız) |
 | `js/render.js` | İzometrik şehir çizimi |
+| `js/ambient.js` | Şehirdeki hareket: arabalar, yürüyen insanlar, ağaçlar, duman, parıltı, saçılan paralar |
 | `js/main.js` | Dokunma, menüler, kayıt |
 | `css/style.css` | Ekran düzeni |
 | `img/binalar/` | Bina görselleri. Kurallar ve dosya adları `img/binalar/OKU.md` içinde. |

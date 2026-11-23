@@ -41,3 +41,20 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 - Kararlar (onay bekliyor): yarı gerçekçi elle boyanmış tarz, izometrik açı korunuyor, yerel Türk kasabası tonu, tabelalarda yazı yok.
 - Rehberde 10 bina için tarif ve Higgsfield komut şablonu var.
 - Sırada: kullanıcı Higgsfield'a kredi yükleyince ilk bina (müstakil ev) üretilip oyunda denenecek.
+
+## 2026-11-23 — Kodla çizilen hareketler
+
+**Yapılan** (`js/ambient.js`)
+- Arabalar: ana caddeye bağlı yollarda dolaşır, sağ şeritten gider; harita kenarından çıkan başka kenardan girer. Sayısı yol ve dükkan sayısıyla artar (en çok 14).
+- Yürüyen insanlar: kaldırımda yürür, arada geri döner. Sayısı kiracılı ev ve dükkan sayısıyla artar (en çok 18).
+- Ağaçlar: kilitli arsalarda, rüzgârda sallanır. Arsa açılınca temizlenir.
+- Duman: atölye bacasından, yalnız yola bağlıyken (çalıştığını gösterir).
+- Parıltı: park çeşmesi ve villa havuzunda.
+- Para saçılması: kira ya da gelir toplanınca bozuk paralar sıçrar.
+- Menü → "Şehirde hareket" ile kapatılabilir; telefonda "hareketi azalt" ayarı açıksa varsayılan kapalı.
+- Duman ve parıltı yerleri `js/data.js` içinde (`smoke`, `sparkle`); bina görselleri gelince bacanın yeri oradan ayarlanır.
+- Telefon boyutunda saniyede 60 kare ölçüldü (test bilgisayarında).
+
+**Sırada**
+- Kare kare animasyon (neon, çeşme) altyapısı: hareketli görseller geldiğinde.
+- Görseli olmayan binalar için tarayıcı konsolunda "dosya bulunamadı" uyarısı çıkıyor; zararsız.

@@ -2,12 +2,15 @@
 import { CONFIG, BUILDINGS, TENANTS, CATEGORIES, QUESTS } from './data.js';
 import * as G from './game.js';
 import { createRenderer, loadSprites } from './render.js';
+import { createAmbient } from './ambient.js';
 
 const SAVE_KEY = 'emlak-sehri-kayit-v1';
 const $ = id => document.getElementById(id);
 
 const canvas = $('city');
 const R = createRenderer(canvas);
+const AMB = createAmbient(R);
+const PREF_KEY = 'emlak-sehri-ayar-v1';
 const view = { selectedId: null, placement: null, floaters: [] };
 let s = null;
 let mode = 'normal'; // normal | place | road
@@ -23,6 +26,21 @@ function loadSave(hotData) {
     if (raw) return G.deserialize(raw);
   } catch (e) { /* kayıt okunamadı: yeni oyun */ }
   return null;
+}
+
+// Hareket ayarı oyun kaydından ayrı tutulur (cihaz ayarı)
+function loadPrefs() {
+  let motion = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  try {
+    const p = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
+    if (typeof p.motion === 'boolean') motion = p.motion;
+  } catch (e) { /* varsayılan */ }
+  AMB.enabled = motion;
+}
+
+function setMotion(on) {
+  AMB.enabled = on;
+  try { localStorage.setItem(PREF_KEY, JSON.stringify({ motion: on })); } catch (e) { /* depolama kapalı */ }
 }
 
 function save() {
@@ -52,12 +70,13 @@ function start(hotData = {}) {
   s.events.length = 0;
   lastWall = Date.now();
   bindUi();
+  loadPrefs();
   loadSprites();
   requestAnimationFrame(frame);
   setInterval(save, 5000);
   window.claude?.hot?.snapshot?.(() => ({ save: G.serialize(s) }));
   // testler ve hata ayıklama için
-  window.__emlak = { state: () => s, renderer: R };
+  window.__emlak = { state: () => s, renderer: R, ambient: AMB };
 }
 
 function frame(t) {
@@ -68,7 +87,8 @@ function frame(t) {
   updateHud();
   panelTick();
   view.floaters = view.floaters.filter(f => t - f.t0 < 1200);
-  R.draw(s, view, t);
+  AMB.update(s, t);
+  R.draw(s, view, t, AMB);
   requestAnimationFrame(frame);
 }
 
@@ -79,6 +99,7 @@ function drainEvents(t) {
   for (const e of evs) {
     if (e.type === 'collected') {
       view.floaters.push({ x: e.x, y: e.y, text: `+${G.formatMoney(e.amount)} 🪙`, t0: t });
+      AMB.burst(e.x, e.y, e.amount);
       buzz(12);
     } else if (e.type === 'levelUp') {
       showLevelUp(e.level, e.reward);
@@ -676,8 +697,12 @@ function openParcel(px, py) {
 function openMenu() {
   view.selectedId = null;
   openSheet({
-    sig: () => `${s.speed}`,
+    sig: () => `${s.speed}|${AMB.enabled}`,
     render: () => `<h2>Menü</h2>
+      <div><h3>Şehirde hareket</h3>
+        <div class="btns"><button type="button" class="btn ${AMB.enabled ? 'coin' : ''}" data-act="motion" data-v="1">Açık</button>
+        <button type="button" class="btn ${AMB.enabled ? '' : 'coin'}" data-act="motion" data-v="0">Kapalı</button></div>
+        <p class="sub" style="margin:6px 0 0">Arabalar, yürüyen insanlar, duman ve ağaçlar. Telefon yavaşlarsa kapat.</p></div>
       <div><h3>Zaman hızı (test için)</h3>
         <div class="btns">${CONFIG.speeds.map(v => `<button type="button" class="btn ${s.speed === v ? 'coin' : ''}" data-act="speed" data-v="${v}">×${v}</button>`).join('')}</div>
         <p class="sub" style="margin:6px 0 0">×60'ta 1 dakika = 1 saat. Kontratları hızlıca denemek için.</p></div>
@@ -686,6 +711,7 @@ function openMenu() {
       <p class="sub" style="margin:0">Prototip 0.1 · ilerleme bu cihazda saklanır.</p>`,
     actions: {
       speed: ds => { s.speed = Number(ds.v); toast(`Zaman hızı ×${ds.v}`); save(); },
+      motion: ds => setMotion(ds.v === '1'),
       reset: (ds, el) => {
         if (el.dataset.armed !== '1') { el.dataset.armed = '1'; el.textContent = 'Her şey silinecek. Emin misin?'; return; }
         s = G.createState();

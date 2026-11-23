@@ -162,7 +162,7 @@ export function createRenderer(canvas) {
     ctx.setLineDash([]);
   }
 
-  function drawParcels(s) {
+  function drawParcels(s, labels = false) {
     const p = CONFIG.parcelSize;
     const max = CONFIG.gridSize / p;
     const price = G.parcelCost(s);
@@ -173,12 +173,12 @@ export function createRenderer(canvas) {
         const b = diamond(px * p + p - 1, py * p).pts[1];
         const c = diamond(px * p + p - 1, py * p + p - 1).pts[2];
         const d = diamond(px * p, py * p + p - 1).pts[3];
+        const cx = (a[0] + c[0]) / 2, cy = (a[1] + c[1]) / 2;
+        if (labels) { pill(cx, cy, `🔒 ${G.formatMoney(price)}`, 'rgba(22,32,48,0.78)', '#ffe08a', 11); continue; }
         ctx.lineWidth = 1.5;
         ctx.setLineDash([5, 5]);
         poly([a, b, c, d], 'rgba(20,40,20,0.10)', 'rgba(255,255,255,0.55)');
         ctx.setLineDash([]);
-        const cx = (a[0] + c[0]) / 2, cy = (a[1] + c[1]) / 2;
-        pill(cx, cy, `🔒 ${G.formatMoney(price)}`, 'rgba(22,32,48,0.78)', '#ffe08a', 11);
       }
     }
   }
@@ -248,6 +248,7 @@ export function createRenderer(canvas) {
       if (d.cat !== 'kamu' || d.height > 12) drawWindows(g, t, h, d.cat);
     }
     poly(t, tint || col.top);
+    if (d.smoke) drawChimney(b, d, h);
     ctx.lineWidth = selected ? 2.5 : 1;
     poly(t, null, selected ? '#ffffff' : 'rgba(0,0,0,0.15)');
     if (selected && h > 0) {
@@ -261,6 +262,17 @@ export function createRenderer(canvas) {
     ctx.textBaseline = 'middle';
     ctx.fillText(d.icon, cx, cy);
     ctx.globalAlpha = 1;
+  }
+
+  // Kutu çiziminde bacalı binalara küçük bir baca
+  function drawChimney(b, d, h) {
+    const fx = b.x + 0.5 + d.smoke.x, fy = b.y + 0.5 + d.smoke.y;
+    const [cx, cy] = toScreen(fx, fy);
+    const w = 4 * cam.z, top = cy - (d.smoke.h ?? (d.height || 0) + 14) * cam.z;
+    ctx.fillStyle = '#8b4a3a';
+    ctx.fillRect(cx - w, top, w * 2, cy - h - top);
+    ctx.fillStyle = '#5c2f25';
+    ctx.fillRect(cx - w - 1, top - 2 * cam.z, w * 2 + 2, 3 * cam.z);
   }
 
   function drawWindows(g, t, h, cat) {
@@ -335,7 +347,7 @@ export function createRenderer(canvas) {
     }
   }
 
-  function draw(s, view, t) {
+  function draw(s, view, t, amb = null) {
     const c = ctx;
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
     const sky = c.createLinearGradient(0, 0, 0, H);
@@ -352,15 +364,20 @@ export function createRenderer(canvas) {
     if (pl && pl.type !== 'yol') drawInfluence(s, pl);
     else if (sel) drawInfluence(s, sel);
 
-    // binalar arkadan öne
+    // binalar, ağaçlar, arabalar, insanlar: arkadan öne (karenin merkezine göre)
     const list = Object.values(s.buildings).filter(b => b.type !== 'yol' && (!pl || b.id !== pl.moveId));
-    const items = list.map(b => ({ b, ghost: false }));
-    if (pl && pl.type !== 'yol') items.push({ b: { id: '_ghost', type: pl.type, x: pl.x, y: pl.y }, ghost: true });
-    items.sort((a, b) => (a.b.x + a.b.y) - (b.b.x + b.b.y) || a.b.x - b.b.x);
-    for (const it of items) {
-      if (it.ghost) drawBuilding(it.b, 0.82, true, pl.valid ? null : '#e5534b');
+    const items = list.map(b => ({ b, ghost: false, key: b.x + b.y + 1, kx: b.x + 0.5 }));
+    if (pl && pl.type !== 'yol') items.push({ b: { id: '_ghost', type: pl.type, x: pl.x, y: pl.y }, ghost: true, key: pl.x + pl.y + 1, kx: pl.x + 0.5 });
+    const all = amb ? items.concat(amb.drawables(s, t)) : items;
+    all.sort((a, b) => a.key - b.key || a.kx - b.kx);
+    for (const it of all) {
+      if (it.draw) it.draw();
+      else if (it.ghost) drawBuilding(it.b, 0.82, true, pl.valid ? null : '#e5534b');
       else drawBuilding(it.b, 1, sel && sel.id === it.b.id);
     }
+
+    if (amb) amb.drawOverlay(t);
+    drawParcels(s, true); // fiyat etiketleri ağaçların üstünde kalsın
 
     if (!pl) for (const it of items) drawStatus(s, it.b, t);
 
@@ -402,5 +419,8 @@ export function createRenderer(canvas) {
     }
   }
 
-  return { cam, resize, draw, screenToTile, centerOn, zoomAt, pan, toScreen, get size() { return { W, H }; } };
+  return {
+    cam, ctx, resize, draw, screenToTile, centerOn, zoomAt, pan, toScreen, poly, buildingTop,
+    get size() { return { W, H }; },
+  };
 }

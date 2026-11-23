@@ -44,6 +44,7 @@ export const CONFIG = {
 };
 
 // cat: konut | ticari | kamu | sanayi | yol
+// smoke: bacadan duman, sparkle: su parıltısı (görsel süs, oyunu etkilemez)
 // effect: { radius, all, tenants: { kiracıId: ek yüzde } } — radius kare tabanlı (radius 1 = 3x3 alan)
 export const BUILDINGS = {
   yol: { name: 'Yol', cat: 'yol', icon: '', cost: 0, unlock: 1 },
@@ -58,7 +59,7 @@ export const BUILDINGS = {
   },
   villa: {
     name: 'Villa', cat: 'konut', icon: '🏡', cost: 2600, unlock: 6,
-    rentPerHour: 1000, height: 22,
+    rentPerHour: 1000, height: 22, sparkle: { h: 24, spread: 0.18 }, // havuz parıltısı
   },
 
   kafe: {
@@ -79,7 +80,7 @@ export const BUILDINGS = {
 
   park: {
     name: 'Park', cat: 'kamu', icon: '🌳', cost: 250, unlock: 1,
-    height: 0,
+    height: 0, sparkle: { h: 3, spread: 0.3 }, // çeşme suyunda parıltı
     effect: { radius: 1, all: 6, tenants: { aile: 8, emekli: 12 } },
   },
   okul: {
@@ -96,6 +97,7 @@ export const BUILDINGS = {
   atolye: {
     name: 'Atölye', cat: 'sanayi', icon: '🏭', cost: 800, unlock: 3,
     incomePerHour: 220, height: 28,
+    smoke: { x: 0.1, y: -0.12 }, // baca: kare merkezinden kayma; h verilmezse bina yüksekliği + 14
     effect: { radius: 2, all: -8, tenants: { aile: -10, emekli: -12, genc: -4 } },
   },
 };
