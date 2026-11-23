@@ -151,6 +151,19 @@ export const BUILDINGS = {
   },
 };
 
+// Arazi özellikleri: dokümandaki "bazı parsellerde nehir, tepe gibi özellikler olur" kuralı.
+// buildable: üstüne bina/yol yapılabilir mi; nearBonus: radius içindeki evlere bonus; onBonus: üstündeki eve bonus.
+export const TERRAIN = {
+  nehir: { name: 'Nehir', sprite: 'zemin-nehir', buildable: false, nearBonus: { radius: 1, all: 8 } },
+  tepe: { name: 'Tepe', sprite: 'zemin-tepe', buildable: true, onBonus: 10 },
+};
+
+// Eski Çarşı haritasındaki arazi: nehir y=10 satırı boyunca akar (cadde köprüyle geçer), tepeler kuzeydoğuda.
+export const MAP_TERRAIN = [
+  ...[0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11].map(x => [x, 10, 'nehir']),
+  [9, 1, 'tepe'], [10, 1, 'tepe'], [10, 2, 'tepe'], [11, 2, 'tepe'],
+];
+
 export const CATEGORIES = {
   konut: { name: 'Konut', hint: 'Kiracı alır, kira getirir' },
   ticari: { name: 'Ticari', hint: 'Kendi geliri + çevreye kira bonusu' },

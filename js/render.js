@@ -1,5 +1,5 @@
 // İzometrik şehir çizimi (Canvas 2D). Oyun mantığını değiştirmez, yalnız okur.
-import { CONFIG, BUILDINGS, TENANTS } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, TERRAIN } from './data.js';
 import * as G from './game.js';
 
 export const TW = 64; // kare genişliği
@@ -32,6 +32,13 @@ export function loadSprites(onLoad = () => {}) {
     img.onload = () => { sprites[type] = img; onLoad(type); };
     img.onerror = () => {};
     img.src = `${SPRITE_DIR}${BUILDINGS[type].sprite || type}.png`;
+  }
+  // zemin kareleri (nehir, tepe ...)
+  for (const ter of Object.values(TERRAIN)) {
+    const img = new Image();
+    img.onload = () => { sprites[ter.sprite] = img; onLoad(ter.sprite); };
+    img.onerror = () => {};
+    img.src = `${SPRITE_DIR}${ter.sprite}.png`;
   }
 }
 
@@ -122,9 +129,23 @@ export function createRenderer(canvas) {
         const alt = (x + y) % 2 === 0;
         let fill = unlocked ? (alt ? GROUND.grassA : GROUND.grassB) : (alt ? GROUND.locked : GROUND.lockedB);
         const b = G.buildingAt(s, x, y);
+        const ter = G.terrainAt(x, y);
+        const bridge = G.isAvenue(x, y) && G.terrainAt(x - 1, y) === 'nehir';
+        const terImg = ter ? sprites[TERRAIN[ter].sprite] : bridge ? sprites[TERRAIN.nehir.sprite] : null;
         if (G.isAvenue(x, y)) fill = GROUND.avenue;
         else if (b && b.type === 'yol') fill = G.isRoadConnected(s, x, y) ? GROUND.road : GROUND.roadOff;
-        poly(d.pts, fill);
+        if (terImg) {
+          drawTile(x, y, terImg);
+          if (!unlocked) poly(d.pts, 'rgba(25,45,20,0.32)');
+          else if (ter === 'tepe' && !b) poly(d.pts, null, 'rgba(40,70,30,0.12)');
+        }
+        if (bridge) {
+          // cadde nehrin üstünden köprüyle geçer
+          const bd = diamond(x, y, 0.1);
+          poly(bd.pts, GROUND.avenue, '#3c414a');
+        } else if (!terImg) {
+          poly(d.pts, fill);
+        }
         if (G.isAvenue(x, y)) {
           ctx.strokeStyle = GROUND.line;
           ctx.lineWidth = 1.5 * cam.z;
@@ -135,12 +156,22 @@ export function createRenderer(canvas) {
           ctx.stroke();
           ctx.setLineDash([]);
         }
-        if (unlocked) {
+        if (unlocked && !terImg) {
           ctx.lineWidth = 1;
           poly(d.pts, null, 'rgba(40,70,30,0.12)');
         }
       }
     }
+  }
+
+  // Zemin karesi görselini karenin baklavasına oturt (alt köşe = karenin alt köşesi)
+  function drawTile(x, y, img) {
+    const [sx, sy] = toScreen(x, y);
+    const w = TW * cam.z;
+    const h = w * img.naturalHeight / img.naturalWidth;
+    // görselin altındaki toprak kenar (~%6) karenin altına sarksın; üst yüzey zeminle aynı hizada kalsın
+    const slab = w * 0.06;
+    ctx.drawImage(img, sx - w / 2, sy + TH * cam.z - h + slab, w, h);
   }
 
   function drawInfluence(s, src) {

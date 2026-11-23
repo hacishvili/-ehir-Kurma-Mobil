@@ -205,3 +205,17 @@ test('etkisinde kiracı ayrımı olmayan binalar da bonus verir', () => {
   assert.ok(G.build(s, 'saatkulesi', 4, 4).ok);
   assert.equal(G.bonusAt(s, 6, 6, 'aile').total, 10);
 });
+
+test('nehre bina ve yol yapılamaz; nehir kenarındaki ev ve tepedeki ev bonus alır', () => {
+  const s = rich();
+  G.buyParcel(s, 1, 2);
+  assert.equal(G.terrainAt(6, 10), 'nehir');
+  assert.equal(G.build(s, 'ev', 6, 10).ok, false);
+  assert.equal(G.build(s, 'yol', 7, 10).ok, false);
+  assert.equal(G.bonusAt(s, 6, 9).total, 8, 'nehir manzarası');
+  assert.equal(G.bonusAt(s, 6, 8).total, 0, 'nehirden uzak');
+  G.buyParcel(s, 2, 0);
+  assert.equal(G.terrainAt(10, 1), 'tepe');
+  assert.ok(G.build(s, 'ev', 10, 1).ok, 'tepeye bina yapılabilir');
+  assert.equal(G.bonusAt(s, 10, 1).total, 10, 'tepe bonusu');
+});

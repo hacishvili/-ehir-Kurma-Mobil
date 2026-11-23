@@ -108,3 +108,11 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 - Atölye ve market yeniden üretilmiş görsellerle değişti. Atölye ve fabrika dumanı bacalardan çıkıyor (fabrikada iki baca).
 - Görsel aracı: arka plan rengini kenarların çoğunluğundan buluyor (bankanın köşesinde gri leke vardı), yalnız en büyük parçayı bırakıyor, `img/kaynak/ayarlar.json` ile görsele özel ayar (market: tolerans 40).
 - Zemin kareleri (kum, deniz, kıyı) hazırlandı (`img/binalar/zemin-*.png`) ama henüz kullanılmıyor; Sahil mahallesiyle gelecek.
+
+## 2026-11-23 — Görsel 15–17: nehir, tepe, beton; arazi özellikleri
+
+- Dokümandaki "bazı parsellerde nehir, tepe gibi özellikler olur ve kendi etki alanlarını taşır" kuralı yapıldı (`js/data.js` → `TERRAIN`, `MAP_TERRAIN`).
+- Nehir: y=10 satırı boyunca akar, ana cadde köprüyle geçer. Üstüne bina ve yol yapılamaz. 1 kare yakınındaki evlere +%8 (nehir manzarası).
+- Tepe: kuzeydoğu parselinde 4 kare. Üstüne bina yapılabilir; tepedeki eve +%10.
+- Zemin kareleri görselle çiziliyor; kilitli arsada koyulaştırılıyor; ağaçlar nehre çıkmıyor. 1 yeni test (toplam 18).
+- Beton, kum, deniz, kıyı kareleri hazır ama kullanılmıyor: Sanayi Bölgesi / İş Merkezi / Sahil mahalleleriyle gelecek.

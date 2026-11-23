@@ -1,5 +1,5 @@
 // Oyun mantığı. Ekran çizimi ve dokunma burada yok; böylece testler tarayıcısız çalışır.
-import { CONFIG, BUILDINGS, TENANTS, QUESTS } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, QUESTS, TERRAIN, MAP_TERRAIN } from './data.js';
 
 export const MIN = 60 * 1000;
 export const HOUR = 60 * MIN;
@@ -67,6 +67,13 @@ export function parcelOf(x, y) {
 export function isUnlocked(s, x, y) {
   const [px, py] = parcelOf(x, y);
   return s.parcels.includes(`${px},${py}`);
+}
+
+const terrainMap = new Map(MAP_TERRAIN.map(([x, y, type]) => [`${x},${y}`, type]));
+
+// Karedeki arazi türü (nehir, tepe) ya da null
+export function terrainAt(x, y) {
+  return terrainMap.get(`${x},${y}`) || null;
 }
 
 export function isAvenue(x, y) {
@@ -193,6 +200,13 @@ export function bonusAt(s, x, y, tenant = null, opts = {}) {
     const v = e.all + (tenant ? ((e.tenants || {})[tenant] || 0) : 0);
     perType[b.type] = (perType[b.type] || 0) + v;
   }
+  // arazi: nehir manzarası ve tepe
+  for (const [type, ter] of Object.entries(TERRAIN)) {
+    if (ter.onBonus && terrainAt(x, y) === type) perType[type] = (perType[type] || 0) + ter.onBonus;
+    if (ter.nearBonus && nearTerrain(x, y, type, ter.nearBonus.radius)) {
+      perType[type] = (perType[type] || 0) + ter.nearBonus.all;
+    }
+  }
   const parts = [];
   let total = 0;
   for (const [type, raw] of Object.entries(perType)) {
@@ -203,6 +217,15 @@ export function bonusAt(s, x, y, tenant = null, opts = {}) {
   const result = { total: clamp(total, CONFIG.bonusMin, CONFIG.bonusMax), parts };
   if (useCache) c.bonus.set(key, result);
   return result;
+}
+
+export function nearTerrain(x, y, type, radius) {
+  for (let dy = -radius; dy <= radius; dy++) {
+    for (let dx = -radius; dx <= radius; dx++) {
+      if ((dx || dy) && terrainAt(x + dx, y + dy) === type) return true;
+    }
+  }
+  return false;
 }
 
 export function affectedByType(s, x, y, type) {
@@ -462,6 +485,8 @@ export function canPlace(s, x, y, ignoreId = null, size = 1) {
       if (!inBounds(tx, ty)) return fail('Harita dışı.');
       if (!isUnlocked(s, tx, ty)) return fail('Bu arsa henüz açılmadı.');
       if (isAvenue(tx, ty)) return fail('Ana caddeye bina yapılamaz.');
+      const ter = terrainAt(tx, ty);
+      if (ter && !TERRAIN[ter].buildable) return fail(`${TERRAIN[ter].name} üstüne bina yapılamaz.`);
       const b = buildingAt(s, tx, ty);
       if (b && b.id !== ignoreId) return fail(size > 1 ? `Bu bina ${size}×${size} kare ister; yer dolu.` : 'Bu kare dolu.');
     }

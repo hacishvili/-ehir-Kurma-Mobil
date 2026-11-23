@@ -160,7 +160,7 @@ export function createAmbient(R) {
     const n = CONFIG.gridSize;
     for (let y = 0; y < n; y++) {
       for (let x = 0; x < n; x++) {
-        if (G.isUnlocked(s, x, y) || G.isAvenue(x, y)) continue;
+        if (G.isUnlocked(s, x, y) || G.isAvenue(x, y) || G.terrainAt(x, y) === 'nehir') continue;
         const count = hash(x, y) < 0.45 ? (hash(x, y, 1) < 0.35 ? 2 : 1) : 0;
         for (let k = 0; k < count; k++) {
           const fx = x + 0.25 + hash(x, y, 2 + k) * 0.5;
