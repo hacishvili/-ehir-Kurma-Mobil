@@ -1,0 +1,597 @@
+// Oyun mantığı. Ekran çizimi ve dokunma burada yok; böylece testler tarayıcısız çalışır.
+import { CONFIG, BUILDINGS, TENANTS, QUESTS } from './data.js';
+
+export const MIN = 60 * 1000;
+export const HOUR = 60 * MIN;
+export const SAVE_VERSION = 1;
+
+// ---------- Durum ----------
+
+export function createState() {
+  const s = {
+    v: SAVE_VERSION,
+    money: CONFIG.startMoney,
+    xp: 0,
+    level: 1,
+    gameTime: 0,
+    speed: 1,
+    savedAt: Date.now(),
+    nextId: 1,
+    parcels: CONFIG.startParcels.map(([px, py]) => `${px},${py}`),
+    parcelsPaid: 0,
+    buildings: {},
+    stats: { contractsSigned: 0, rentsCollected: 0, moneyEarned: 0 },
+    questIndex: 0,
+    questDone: false,
+  };
+  return hydrate(s);
+}
+
+// Kayıttan gelen ya da yeni durumu çalışmaya hazırlar (önbellekler kaydedilmez).
+export function hydrate(s) {
+  Object.defineProperty(s, '_cache', { value: { version: -1 }, writable: true, enumerable: false });
+  Object.defineProperty(s, 'events', { value: [], writable: true, enumerable: false });
+  Object.defineProperty(s, 'version', { value: 0, writable: true, enumerable: false });
+  return s;
+}
+
+export function serialize(s) {
+  s.savedAt = Date.now();
+  return JSON.stringify(s);
+}
+
+export function deserialize(json) {
+  const s = JSON.parse(json);
+  if (!s || s.v !== SAVE_VERSION) return null;
+  return hydrate(s);
+}
+
+function emit(s, type, data = {}) {
+  s.events.push({ type, ...data });
+}
+
+function changed(s) {
+  s.version++;
+}
+
+// ---------- Harita ----------
+
+export function inBounds(x, y) {
+  return x >= 0 && y >= 0 && x < CONFIG.gridSize && y < CONFIG.gridSize;
+}
+
+export function parcelOf(x, y) {
+  return [Math.floor(x / CONFIG.parcelSize), Math.floor(y / CONFIG.parcelSize)];
+}
+
+export function isUnlocked(s, x, y) {
+  const [px, py] = parcelOf(x, y);
+  return s.parcels.includes(`${px},${py}`);
+}
+
+export function isAvenue(x, y) {
+  return x === CONFIG.avenueX && inBounds(x, y);
+}
+
+function cache(s) {
+  const c = s._cache;
+  if (c.version === s.version) return c;
+  const n = CONFIG.gridSize;
+  const grid = Array.from({ length: n }, () => new Array(n).fill(null));
+  for (const b of Object.values(s.buildings)) grid[b.y][b.x] = b;
+  c.grid = grid;
+  c.connected = computeConnected(grid);
+  c.bonus = new Map();
+  c.version = s.version;
+  return c;
+}
+
+export function buildingAt(s, x, y) {
+  if (!inBounds(x, y)) return null;
+  return cache(s).grid[y][x];
+}
+
+function isRoadTile(grid, x, y) {
+  if (!inBounds(x, y)) return false;
+  if (isAvenue(x, y)) return true;
+  const b = grid[y][x];
+  return !!b && b.type === 'yol';
+}
+
+// Ana caddeden başlayıp yollar üzerinden ulaşılabilen kareleri bulur.
+function computeConnected(grid) {
+  const n = CONFIG.gridSize;
+  const roadOk = Array.from({ length: n }, () => new Array(n).fill(false));
+  const queue = [];
+  for (let y = 0; y < n; y++) {
+    roadOk[y][CONFIG.avenueX] = true;
+    queue.push([CONFIG.avenueX, y]);
+  }
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  while (queue.length) {
+    const [x, y] = queue.pop();
+    for (const [dx, dy] of dirs) {
+      const nx = x + dx, ny = y + dy;
+      if (isRoadTile(grid, nx, ny) && !roadOk[ny][nx]) {
+        roadOk[ny][nx] = true;
+        queue.push([nx, ny]);
+      }
+    }
+  }
+  return { roadOk, dirs };
+}
+
+// Bina, bağlı bir yola komşuysa bağlıdır.
+export function isConnected(s, b) {
+  const { roadOk, dirs } = cache(s).connected;
+  return dirs.some(([dx, dy]) => {
+    const nx = b.x + dx, ny = b.y + dy;
+    return inBounds(nx, ny) && roadOk[ny][nx];
+  });
+}
+
+export function isRoadConnected(s, x, y) {
+  return cache(s).connected.roadOk[y]?.[x] ?? false;
+}
+
+// ---------- Etki alanı ----------
+
+export function def(type) {
+  return BUILDINGS[type];
+}
+
+export function isHouse(b) {
+  return def(b.type).cat === 'konut';
+}
+
+export function inRadius(src, x, y, radius) {
+  return Math.max(Math.abs(src.x - x), Math.abs(src.y - y)) <= radius;
+}
+
+// (x, y) karesindeki bir evin konum bonusu (yüzde). tenant verilmezse yalnız herkese uygulanan kısım.
+// extra: yerleştirme önizlemesi için geçici bina { type, x, y }; ignoreId: taşınan bina
+export function bonusAt(s, x, y, tenant = null, opts = {}) {
+  const { extra = null, ignoreId = null } = opts;
+  const useCache = !extra && !ignoreId;
+  const key = `${x},${y},${tenant || ''}`;
+  const c = cache(s);
+  if (useCache && c.bonus.has(key)) return c.bonus.get(key);
+
+  const sources = Object.values(s.buildings).filter(b => b.id !== ignoreId);
+  if (extra) sources.push(extra);
+  const perType = {};
+  for (const b of sources) {
+    const e = def(b.type).effect;
+    if (!e || (b.x === x && b.y === y)) continue;
+    if (!inRadius(b, x, y, e.radius)) continue;
+    const v = e.all + (tenant ? (e.tenants[tenant] || 0) : 0);
+    perType[b.type] = (perType[b.type] || 0) + v;
+  }
+  const parts = [];
+  let total = 0;
+  for (const [type, raw] of Object.entries(perType)) {
+    const v = clamp(raw, -CONFIG.stackCapPerType, CONFIG.stackCapPerType);
+    if (v !== 0) parts.push({ type, value: v, capped: v !== raw });
+    total += v;
+  }
+  const result = { total: clamp(total, CONFIG.bonusMin, CONFIG.bonusMax), parts };
+  if (useCache) c.bonus.set(key, result);
+  return result;
+}
+
+export function affectedByType(s, x, y, type) {
+  return Object.values(s.buildings).some(b =>
+    b.type === type && def(type).effect && inRadius(b, x, y, def(type).effect.radius));
+}
+
+// ---------- Kira ve kiracılar ----------
+
+export function rentFor(houseType, tenantId, minutes, bonusPct) {
+  const hours = minutes / 60;
+  const perHour = def(houseType).rentPerHour * TENANTS[tenantId].rentMult *
+    Math.pow(hours, CONFIG.rentDurationExponent);
+  return Math.max(1, Math.round(perHour * hours * (1 + bonusPct / 100)));
+}
+
+export function xpFor(minutes) {
+  return Math.max(2, Math.round(4 * Math.sqrt(minutes / 60) + 1));
+}
+
+export function demandMet(s, house, demand) {
+  if (!demand) return false;
+  const near = affectedByType(s, house.x, house.y, demand.type);
+  return demand.kind === 'near' ? near : !near;
+}
+
+export function demandText(demand) {
+  const name = def(demand.type).name.toLocaleLowerCase('tr');
+  return demand.kind === 'near' ? `${name} yakınında olsun` : `${name} etkisinden uzak olsun`;
+}
+
+function pick(arr, rng) {
+  return arr[Math.floor(rng() * arr.length)];
+}
+
+function makeDemand(s, tenantId, rng) {
+  const t = TENANTS[tenantId];
+  const likes = t.likes.filter(type => def(type).unlock <= s.level);
+  const dislikes = t.dislikes.filter(type => def(type).unlock <= s.level);
+  const wantAway = dislikes.length && (rng() < 0.3 || !likes.length);
+  if (wantAway) return { kind: 'away', type: pick(dislikes, rng) };
+  if (likes.length) return { kind: 'near', type: pick(likes, rng) };
+  return null;
+}
+
+export function generateCards(s, house, rng = Math.random) {
+  const ids = Object.keys(TENANTS);
+  // farklı kiracı tipleri karışık sırada
+  const pool = ids.slice().sort(() => rng() - 0.5);
+  const cards = [];
+  for (let i = 0; i < CONFIG.cardsPerHouse; i++) {
+    const tenant = pool[i % pool.length];
+    cards.push({
+      tenant,
+      minutes: pick(TENANTS[tenant].durations, rng),
+      demand: makeDemand(s, tenant, rng),
+    });
+  }
+  house.cards = cards;
+  return cards;
+}
+
+// Bir kartın bu evde şu anki değeri (kira, ücret, xp, talep durumu).
+export function quoteCard(s, house, card, waiveFee = false) {
+  const bonus = bonusAt(s, house.x, house.y, card.tenant);
+  const rent = rentFor(house.type, card.tenant, card.minutes, bonus.total);
+  return {
+    rent,
+    fee: waiveFee ? 0 : Math.round(rent * CONFIG.signingFeeRate),
+    xp: xpFor(card.minutes),
+    bonus,
+    met: demandMet(s, house, card.demand),
+  };
+}
+
+export function signContract(s, houseId, cardIndex) {
+  const h = s.buildings[houseId];
+  if (!h || !isHouse(h) || h.contract) return fail('Bu evde zaten kiracı var.');
+  if (!isConnected(s, h)) return fail('Ev yola bağlı değil. Önce yanına yol yap.');
+  const renewing = cardIndex === 'renew';
+  const card = renewing ? h.renewal : h.cards?.[cardIndex];
+  if (!card) return fail('Kiracı kartı bulunamadı.');
+  const q = quoteCard(s, h, card, renewing && card.waiveFee);
+  if (s.money < q.fee) return fail('İmza ücreti için yeterli para yok.');
+  s.money -= q.fee;
+  h.contract = {
+    tenant: card.tenant,
+    minutes: card.minutes,
+    demand: card.demand,
+    rent: q.rent,
+    xp: q.xp,
+    start: s.gameTime,
+    end: s.gameTime + card.minutes * MIN,
+  };
+  h.cards = null;
+  h.renewal = null;
+  s.stats.contractsSigned++;
+  addXp(s, 1);
+  emit(s, 'signed', { id: h.id });
+  return ok();
+}
+
+export function satisfaction(s, h) {
+  const c = h.contract;
+  if (!c) return null;
+  let v = CONFIG.satBase + (demandMet(s, h, c.demand) ? CONFIG.satDemandMet : CONFIG.satDemandMissed);
+  const dislikes = TENANTS[c.tenant].dislikes;
+  if (dislikes.some(type => affectedByType(s, h.x, h.y, type))) v += CONFIG.satDislikeNearby;
+  const lateHours = Math.max(0, s.gameTime - c.end) / HOUR;
+  v -= lateHours * CONFIG.satLatePerHour;
+  return clamp(Math.round(v), 0, 100);
+}
+
+export function houseStatus(s, h) {
+  if (!isConnected(s, h)) return 'baglantisiz';
+  if (h.contract) return s.gameTime >= h.contract.end ? 'hazir' : 'kirada';
+  if (h.renewal) return 'yenileme';
+  return 'bos';
+}
+
+export function payoutFor(s, h) {
+  const c = h.contract;
+  const bonus = demandMet(s, h, c.demand) ? CONFIG.demandMetRentBonus : 0;
+  return Math.round(c.rent * (1 + bonus));
+}
+
+export function collectRent(s, houseId) {
+  const h = s.buildings[houseId];
+  if (!h || !h.contract || s.gameTime < h.contract.end) return fail('Kira henüz hazır değil.');
+  if (!isConnected(s, h)) return fail('Ev yola bağlı değil.');
+  const c = h.contract;
+  const sat = satisfaction(s, h);
+  const amount = payoutFor(s, h);
+  s.money += amount;
+  s.stats.rentsCollected++;
+  s.stats.moneyEarned += amount;
+  addXp(s, c.xp);
+  h.contract = null;
+  if (sat > 0) {
+    h.renewal = { tenant: c.tenant, minutes: c.minutes, demand: c.demand, waiveFee: sat >= CONFIG.satHappy };
+  } else {
+    h.renewal = null;
+    emit(s, 'tenantLeft', { id: h.id, x: h.x, y: h.y });
+  }
+  emit(s, 'collected', { id: h.id, x: h.x, y: h.y, amount, xp: c.xp });
+  return ok({ amount, left: sat <= 0 });
+}
+
+export function declineRenewal(s, houseId) {
+  const h = s.buildings[houseId];
+  if (h) h.renewal = null;
+}
+
+// ---------- Ticari gelir ----------
+
+export function storageCap(type) {
+  return Math.round((def(type).incomePerHour || 0) * CONFIG.commercialStorageHours);
+}
+
+export function hasIncome(b) {
+  return !!def(b.type).incomePerHour;
+}
+
+export function collectIncome(s, id) {
+  const b = s.buildings[id];
+  if (!b || !hasIncome(b)) return fail('Bu binanın geliri yok.');
+  const amount = Math.floor(b.stored || 0);
+  if (amount < 1) return fail('Henüz gelir birikmedi.');
+  b.stored -= amount;
+  s.money += amount;
+  s.stats.moneyEarned += amount;
+  const xp = Math.max(1, Math.round(amount / 40));
+  addXp(s, xp);
+  emit(s, 'collected', { id, x: b.x, y: b.y, amount, xp });
+  return ok({ amount });
+}
+
+// Bir binada toplanacak bir şey varsa toplar (sürükleyerek toplama için).
+export function collectAny(s, id) {
+  const b = s.buildings[id];
+  if (!b) return fail('');
+  if (isHouse(b)) return houseStatus(s, b) === 'hazir' ? collectRent(s, id) : fail('');
+  if (hasIncome(b) && isConnected(s, b) && (b.stored || 0) >= 1) return collectIncome(s, id);
+  return fail('');
+}
+
+export function isCollectable(s, b) {
+  if (!b) return false;
+  if (isHouse(b)) return houseStatus(s, b) === 'hazir';
+  return hasIncome(b) && isConnected(s, b) && (b.stored || 0) >= readyThreshold(b.type);
+}
+
+export function readyThreshold(type) {
+  return Math.max(1, (def(type).incomePerHour || 0) * 0.25);
+}
+
+export function collectAll(s) {
+  let total = 0;
+  for (const b of Object.values(s.buildings)) {
+    if (isHouse(b) ? houseStatus(s, b) === 'hazir' : (hasIncome(b) && isConnected(s, b) && (b.stored || 0) >= 1)) {
+      const r = collectAny(s, b.id);
+      if (r.ok) total += r.amount;
+    }
+  }
+  return total;
+}
+
+// ---------- Zaman ----------
+
+// realMs gerçek zamanı oyun hızına göre ilerletir.
+export function advance(s, realMs) {
+  if (realMs <= 0) return;
+  const dt = realMs * s.speed;
+  s.gameTime += dt;
+  for (const b of Object.values(s.buildings)) {
+    if (hasIncome(b) && isConnected(s, b)) {
+      const cap = storageCap(b.type);
+      b.stored = Math.min(cap, (b.stored || 0) + def(b.type).incomePerHour * dt / HOUR);
+    }
+  }
+}
+
+// Oyuncu yokken olanların özeti.
+export function awaySummary(s, sinceGameTime) {
+  let readyHouses = 0, rentWaiting = 0, unhappy = 0, income = 0, ended = 0;
+  for (const b of Object.values(s.buildings)) {
+    if (isHouse(b)) {
+      if (houseStatus(s, b) === 'hazir') {
+        readyHouses++;
+        rentWaiting += payoutFor(s, b);
+        if (b.contract.end > sinceGameTime) ended++;
+        if (satisfaction(s, b) < 50) unhappy++;
+      }
+    } else if (hasIncome(b) && isConnected(s, b)) {
+      income += Math.floor(b.stored || 0);
+    }
+  }
+  return { readyHouses, rentWaiting, unhappy, income, ended, elapsed: s.gameTime - sinceGameTime };
+}
+
+// ---------- İnşaat ----------
+
+export function countOf(s, type) {
+  return Object.values(s.buildings).filter(b => b.type === type).length;
+}
+
+export function buildCost(s, type) {
+  const d = def(type);
+  if (!d.cost) return 0;
+  return Math.round(d.cost * Math.pow(CONFIG.buildCostGrowth, countOf(s, type)));
+}
+
+export function canPlace(s, x, y, ignoreId = null) {
+  if (!inBounds(x, y)) return fail('Harita dışı.');
+  if (!isUnlocked(s, x, y)) return fail('Bu arsa henüz açılmadı.');
+  if (isAvenue(x, y)) return fail('Ana caddeye bina yapılamaz.');
+  const b = buildingAt(s, x, y);
+  if (b && b.id !== ignoreId) return fail('Bu kare dolu.');
+  return ok();
+}
+
+export function build(s, type, x, y) {
+  const d = def(type);
+  if (!d) return fail('Bilinmeyen bina.');
+  if (d.unlock > s.level) return fail(`Seviye ${d.unlock} gerekli.`);
+  const p = canPlace(s, x, y);
+  if (!p.ok) return p;
+  const cost = buildCost(s, type);
+  if (s.money < cost) return fail('Yeterli para yok.');
+  s.money -= cost;
+  const id = `b${s.nextId++}`;
+  s.buildings[id] = { id, type, x, y, paid: cost, contract: null, renewal: null, cards: null, stored: 0 };
+  changed(s);
+  if (cost > 0) addXp(s, Math.max(1, Math.round(cost / 25)));
+  emit(s, 'built', { id, type });
+  return ok({ id, cost });
+}
+
+export function move(s, id, x, y) {
+  const b = s.buildings[id];
+  if (!b) return fail('Bina bulunamadı.');
+  const p = canPlace(s, x, y, id);
+  if (!p.ok) return p;
+  b.x = x;
+  b.y = y;
+  changed(s);
+  return ok();
+}
+
+export function sell(s, id) {
+  const b = s.buildings[id];
+  if (!b) return fail('Bina bulunamadı.');
+  let collected = 0;
+  if (isHouse(b) && houseStatus(s, b) === 'hazir') collected = collectRent(s, id).amount || 0;
+  else if (hasIncome(b) && b.stored >= 1) collected = collectIncome(s, id).amount || 0;
+  const refund = Math.round((b.paid || 0) * CONFIG.sellRefund);
+  s.money += refund;
+  delete s.buildings[id];
+  changed(s);
+  return ok({ refund, collected });
+}
+
+// ---------- Arsa ----------
+
+export function parcelCost(s) {
+  return Math.round(CONFIG.parcelBaseCost * Math.pow(CONFIG.parcelGrowth, s.parcels.length - CONFIG.startParcels.length));
+}
+
+export function buyParcel(s, px, py) {
+  const key = `${px},${py}`;
+  const max = CONFIG.gridSize / CONFIG.parcelSize;
+  if (px < 0 || py < 0 || px >= max || py >= max) return fail('Geçersiz parsel.');
+  if (s.parcels.includes(key)) return fail('Bu parsel zaten açık.');
+  const cost = parcelCost(s);
+  if (s.money < cost) return fail('Yeterli para yok.');
+  s.money -= cost;
+  s.parcelsPaid += cost;
+  s.parcels.push(key);
+  changed(s);
+  addXp(s, Math.round(cost / 30));
+  emit(s, 'parcel', { key });
+  return ok({ cost });
+}
+
+// ---------- Seviye ----------
+
+export function xpToNext(level) {
+  return Math.round(CONFIG.xpBase * Math.pow(CONFIG.xpGrowth, level - 1));
+}
+
+export function addXp(s, amount) {
+  s.xp += amount;
+  while (s.xp >= xpToNext(s.level)) {
+    s.xp -= xpToNext(s.level);
+    s.level++;
+    const reward = CONFIG.levelUpMoneyPerLevel * s.level;
+    s.money += reward;
+    emit(s, 'levelUp', { level: s.level, reward });
+  }
+}
+
+export function netWorth(s) {
+  let v = s.money + s.parcelsPaid;
+  for (const b of Object.values(s.buildings)) v += (b.paid || 0) * CONFIG.netWorthBuildingRate;
+  return Math.round(v);
+}
+
+// ---------- Görevler ----------
+
+export function currentQuest(s) {
+  return QUESTS[s.questIndex] || null;
+}
+
+export function questProgress(s, q) {
+  const all = Object.values(s.buildings);
+  const houses = all.filter(isHouse);
+  switch (q.kind) {
+    case 'count': return countOf(s, q.type);
+    case 'houses': return houses.length;
+    case 'connectedHouses': return houses.filter(h => isConnected(s, h)).length;
+    case 'stat': return s.stats[q.stat] || 0;
+    case 'houseNear': return houses.filter(h => affectedByType(s, h.x, h.y, q.type)).length;
+    case 'demandMet': return houses.filter(h => h.contract && demandMet(s, h, h.contract.demand)).length;
+    case 'parcels': return s.parcels.length;
+    case 'level': return s.level;
+    case 'netWorth': return netWorth(s);
+    default: return 0;
+  }
+}
+
+export function questComplete(s) {
+  const q = currentQuest(s);
+  return !!q && questProgress(s, q) >= q.n;
+}
+
+export function claimQuest(s) {
+  const q = currentQuest(s);
+  if (!q || !questComplete(s)) return fail('Görev henüz bitmedi.');
+  s.money += q.reward.money || 0;
+  if (q.reward.xp) addXp(s, q.reward.xp);
+  s.questIndex++;
+  emit(s, 'quest', { reward: q.reward });
+  return ok({ reward: q.reward });
+}
+
+// ---------- Yardımcılar ----------
+
+export function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function ok(extra = {}) {
+  return { ok: true, ...extra };
+}
+
+function fail(msg) {
+  return { ok: false, msg };
+}
+
+export function formatDuration(ms) {
+  const sec = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h > 0) return m ? `${h} sa ${m} dk` : `${h} sa`;
+  if (m > 0) return s && m < 10 ? `${m} dk ${s} sn` : `${m} dk`;
+  return `${s} sn`;
+}
+
+export function formatMinutes(min) {
+  if (min < 60) return `${min} dk`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return m ? `${h} sa ${m} dk` : `${h} saat`;
+}
+
+export function formatMoney(n) {
+  return Math.round(n).toLocaleString('tr-TR');
+}

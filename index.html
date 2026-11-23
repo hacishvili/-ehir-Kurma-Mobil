@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#16202e">
+<title>Emlak Şehri</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@500;700;800&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="city" aria-label="Şehir haritası"></canvas>
+
+  <header id="hud">
+    <div class="hud-row">
+      <div class="stat money" title="Para"><span class="ico">🪙</span><span id="money">0</span></div>
+      <button class="stat level" id="levelBtn" type="button" title="Seviye">
+        <span class="lv" id="level">1</span>
+        <span class="xpbar"><span id="xpfill"></span></span>
+      </button>
+      <div class="stat worth" title="Net değer"><span class="lbl">Net değer</span><span id="worth">0</span></div>
+    </div>
+    <button id="quest" type="button" hidden>
+      <span class="q-tag">Danışman</span>
+      <span id="questText"></span>
+      <span id="questProg"></span>
+    </button>
+  </header>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+
+  <div id="placebar" hidden>
+    <div id="placeInfo"></div>
+    <div class="place-actions">
+      <button type="button" id="placeCancel" class="btn ghost">Vazgeç</button>
+      <button type="button" id="placeOk" class="btn primary">Yerleştir</button>
+    </div>
+  </div>
+
+  <section id="sheet" hidden>
+    <div class="sheet-grip"></div>
+    <button type="button" id="sheetClose" class="sheet-x" aria-label="Kapat">✕</button>
+    <div id="sheetBody"></div>
+  </section>
+
+  <nav id="dock">
+    <button type="button" class="dock-btn" id="btnBuild"><span>🏗️</span>İnşa et</button>
+    <button type="button" class="dock-btn" id="btnRoad"><span>🛣️</span>Yol</button>
+    <button type="button" class="dock-btn" id="btnCollect"><span>💰</span>Topla</button>
+    <button type="button" class="dock-btn" id="btnMenu"><span>⚙️</span>Menü</button>
+  </nav>
+
+  <div id="modal" hidden>
+    <div class="modal-card" id="modalBody"></div>
+  </div>
+</div>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
