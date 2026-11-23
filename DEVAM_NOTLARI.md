@@ -249,3 +249,4 @@ Görseller (Claude, ~50 kredi): kaynaklar `img/kaynak/`, doğa ve mevsim ağaçl
 - Oyunda (`roadSprite`, `drawSquare` — `js/render.js`) parça komşu yol ve caddelere göre seçilir, kare görsel baklavaya yatırılır. Bağlantısız yol aynı görselin kırmızıya çalan kopyası. Nehirdeki yol hâlâ kodla çizilen köprü; Ağaçlı Bulvar görsel gelene kadar eskisi gibi.
 - Kullanılmayan yapay zekâ parçaları `img/kaynak/yollar/kullanilmayan-*.png`; `donel-kavsak.png` döner ada için saklandı (2×2 yapı olarak eklenecek).
 - Sürüm 0.4.2 (sürüm kodu 8).
+- **Ana caddeler de yol görseliyle** (0.4.3): cadde kareleri `yol` parçalarıyla çizilir, oyuncunun yollarıyla aynı kavşak parçalarını kullanır (orta şerit yalnız düz parçada). Nehri taş korkuluklu köprüyle geçer, harita dışına aynı görselle uzanır, kumsalda çıkmazla biter.

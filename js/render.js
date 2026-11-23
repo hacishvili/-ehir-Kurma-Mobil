@@ -308,9 +308,9 @@ export function createRenderer(canvas) {
         const ter = outsideTerrain(x, y);
         if (ter && ter !== 'deniz' && sprites[TERRAIN[ter].sprite]) drawTile(x, y, sprites[TERRAIN[ter].sprite]);
         if (outsideAvenue(x, y)) {
-          const d = diamond(x, y);
-          poly(d.pts, GROUND.avenue);
-          avenueLine(d);
+          const img = sprites['yol-yol-5'];
+          if (img) { drawSquare(x, y, img); avenueLine(x, y); }
+          else poly(diamond(x, y).pts, GROUND.avenue);
         }
       }
     }
@@ -340,15 +340,25 @@ export function createRenderer(canvas) {
     ctx.fill();
   }
 
-  function avenueLine(d) {
-    ctx.strokeStyle = GROUND.line;
-    ctx.lineWidth = 1.5 * cam.z;
-    ctx.setLineDash([4 * cam.z, 4 * cam.z]);
-    ctx.beginPath();
-    ctx.moveTo((d.pts[0][0] + d.pts[3][0]) / 2, (d.pts[0][1] + d.pts[3][1]) / 2);
-    ctx.lineTo((d.pts[1][0] + d.pts[2][0]) / 2, (d.pts[1][1] + d.pts[2][1]) / 2);
-    ctx.stroke();
+  // Ana caddenin orta şeridi (cadde kuzey-güney uzanır: x sabit)
+  function avenueLine(x, y) {
+    const [ax, ay] = toScreen(x + 0.5, y + 0.12), [bx, by] = toScreen(x + 0.5, y + 0.88);
+    ctx.strokeStyle = 'rgba(245,240,225,0.85)';
+    ctx.lineWidth = 1.3 * cam.z;
+    ctx.setLineDash([3.5 * cam.z, 3.5 * cam.z]);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
     ctx.setLineDash([]);
+  }
+
+  // Caddenin nehirden geçtiği kare: yol görseli ve iki yanda taş korkuluk
+  function avenueBridge(x, y, img) {
+    drawSquare(x, y, img);
+    ctx.strokeStyle = '#8d7b68';
+    ctx.lineWidth = 2.2 * cam.z;
+    for (const u of [0.19, 0.81]) {
+      const [ax, ay] = toScreen(x + u, y - 0.02), [bx, by] = toScreen(x + u, y + 1.02);
+      ctx.beginPath(); ctx.moveTo(ax, ay - 2 * cam.z); ctx.lineTo(bx, by - 2 * cam.z); ctx.stroke();
+    }
   }
 
   function drawGround(s, view) {
@@ -388,10 +398,11 @@ export function createRenderer(canvas) {
         // Sanayi ve İş Merkezi'nde açık arsalar beton
         const road = b && G.isRoadType(b.type) ? b.type : null;
         // görselli yol: bant karenin ortasından geçer, kenarında zemin görünür
-        const roadImg = road && !ter && !bridge ? roadSprite(s, x, y, road) : null;
-        if (!terImg && ter !== 'deniz' && hood.groundTile && unlocked && !G.isAvenue(x, y) && (!road || roadImg)) terImg = sprites[hood.groundTile] || null;
-        if (G.isAvenue(x, y)) fill = GROUND.avenue;
-        else if (roadImg) fill = null;
+        const avenue = G.isAvenue(x, y);
+        const roadImg = avenue ? roadSprite(s, x, y, 'yol') : road && !ter && !bridge ? roadSprite(s, x, y, road) : null;
+        if (!terImg && ter !== 'deniz' && hood.groundTile && unlocked && (!(avenue || road) || roadImg)) terImg = sprites[hood.groundTile] || null;
+        if (roadImg) fill = null;
+        else if (avenue) fill = GROUND.avenue;
         else if (road) fill = !G.isRoadConnected(s, x, y) ? GROUND.roadOff : road === 'yol-tas' ? GROUND.cobble : GROUND.road;
         if (terImg) {
           drawTile(x, y, terImg);
@@ -400,7 +411,9 @@ export function createRenderer(canvas) {
           if (!unlocked) poly(d.pts, 'rgba(25,45,20,0.32)');
           else if (ter === 'tepe' && !b) poly(d.pts, null, 'rgba(40,70,30,0.12)');
         }
-        if (bridge) {
+        if (bridge && roadImg) {
+          avenueBridge(x, y, roadImg);
+        } else if (bridge) {
           // cadde nehrin üstünden köprüyle geçer
           const bd = diamond(x, y, 0.1);
           poly(bd.pts, GROUND.avenue, '#3c414a');
@@ -410,8 +423,9 @@ export function createRenderer(canvas) {
           poly(d.pts, fill);
           if (road) drawRoadStyle(x, y, road);
         }
-        if (roadImg) drawSquare(x, y, roadImg);
-        if (G.isAvenue(x, y)) avenueLine(d);
+        if (roadImg && !bridge) drawSquare(x, y, roadImg);
+        // orta şerit yalnız düz cadde parçasında (kavşakta çizgi olmaz)
+        if (avenue && (!roadImg || roadImg === sprites['yol-yol-5'])) avenueLine(x, y);
         // ızgara yalnız inşa ederken ve yol yaparken görünür
         if (view.grid && unlocked && !road && !G.isAvenue(x, y)) {
           ctx.lineWidth = 1;
@@ -425,13 +439,13 @@ export function createRenderer(canvas) {
   function roadSprite(s, x, y, type) {
     if (!ROAD_IMAGE_TYPES.includes(type)) return null;
     const isRoad = (nx, ny) => {
-      if (!G.inBounds(nx, ny)) return false;
+      if (!G.inBounds(nx, ny)) return outsideAvenue(nx, ny);
       if (G.isAvenue(nx, ny)) return true;
       const nb = G.buildingAt(s, nx, ny);
       return !!nb && G.isRoadType(nb.type);
     };
     const m = (isRoad(x, y - 1) ? 1 : 0) | (isRoad(x + 1, y) ? 2 : 0) | (isRoad(x, y + 1) ? 4 : 0) | (isRoad(x - 1, y) ? 8 : 0);
-    const off = !G.isRoadConnected(s, x, y);
+    const off = !G.isAvenue(x, y) && G.inBounds(x, y) && !G.isRoadConnected(s, x, y);
     return sprites[`yol-${type}-${m}${off ? '-off' : ''}`] || null;
   }
 
