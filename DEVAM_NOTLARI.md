@@ -72,3 +72,9 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 - Kullanıcı kafe ve parkı üretti (kaynaklar `img/kaynak/`). Hazırlanıp oyuna kondu.
 - `tools/gorsel_hazirla.py` artık açı oranını zeminin alt kenar eğiminden ölçüyor (ağaç ve çitten etkilenmiyor). Ölçülen oranlar: ev 1,83, park 1,73, kafe 1,85. Üç görsel yeniden işlendi.
 - Park, ev ve kafeden biraz daha çizgi filmsi (kalın siyah dış çizgi). Küçük boyutta göze batmıyor; diğer binalarda ev ve kafe örnek gösterilmeli.
+
+## 2026-11-23 — Higgsfield görsellerine doğrudan erişim
+
+- Ortamın izin listesine `d8j0ntlcm91z4.cloudfront.net` eklendi (kullanıcı onayıyla). Claude, kullanıcının Higgsfield'da ürettiği görselleri listeleyip (show_generations) orijinal PNG'yi indirebiliyor. Kullanıcının görsel yüklemesine gerek yok.
+- Ev, kafe ve park kaynakları sıkıştırılmış webp yerine orijinal PNG ile değiştirildi ve yeniden işlendi.
+- Not: kullanıcının üretimleri Nano Banana modeliyle; kafe ve parkta referans görsel eklenmemişti.

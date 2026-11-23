@@ -35,7 +35,7 @@ Görsel karede biraz büyük ya da küçük durursa `js/data.js` içinde o binay
 Üretilen görseli bu klasöre elle koymak yerine şu komutla hazırla:
 
 ```bash
-python3 tools/gorsel_hazirla.py img/kaynak/kafe.webp kafe
+python3 tools/gorsel_hazirla.py img/kaynak/kafe.png kafe
 ```
 
 Araç siyah ya da beyaz düz arka planı siler, boş kenarları kırpar, açıyı oyunun karelerine uydurur ve `img/binalar/kafe.png` olarak kaydeder. Kaynak görsel `img/kaynak/` klasöründe saklanır; sonradan yeniden işlemek gerekirse oradan alınır.

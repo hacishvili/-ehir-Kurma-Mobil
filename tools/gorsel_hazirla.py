@@ -1,7 +1,7 @@
 """Bina görselini oyuna hazırlar.
 
 Kullanım:
-    python3 tools/gorsel_hazirla.py img/kaynak/ev.webp ev
+    python3 tools/gorsel_hazirla.py img/kaynak/ev.png ev
 
 Yaptıkları:
 1. Düz renkli (siyah ya da beyaz) arka planı şeffaf yapar. Kenardan başlayıp
