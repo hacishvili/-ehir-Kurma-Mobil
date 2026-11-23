@@ -22,10 +22,10 @@ Bu klasöre konan her görsel oyunda otomatik görünür. Görseli olmayan bina 
 Bütün binaların aynı oyunun parçası gibi görünmesi için hepsi şu kurallara uymalı:
 
 1. **Açı:** İzometrik, yukarıdan bakış. Binanın zemini yatay bir baklava (eşkenar dörtgen) şeklinde; genişliği yüksekliğinin 2 katı.
-2. **Arka plan:** Şeffaf PNG. Zemin, çimen, gökyüzü yok; yalnız bina.
-3. **Yerleşim:** Görsel tam bina genişliğinde. Zemin baklavasının sol ve sağ köşeleri görselin sol ve sağ kenarına, alt köşesi görselin alt kenarına değer.
+2. **Arka plan:** Şeffaf PNG. Bina kendi bahçesiyle (çim, çit, ağaç) gelir; bahçenin dışında hiçbir şey yok, gökyüzü yok.
+3. **Yerleşim:** Bahçenin baklava şeklindeki zemini görselin tam genişliğinde. Sol ve sağ köşeleri görselin sol ve sağ kenarına, alt köşesi görselin alt kenarına değer.
 4. **Işık:** Hep aynı yönden (sol üstten). Sol duvarlar açık, sağ duvarlar biraz koyu.
 5. **Boyut:** 512 piksel genişlik önerilir. Yükseklik binaya göre serbest; uzun binalar uzun görsel olur.
-6. **Tarz:** Bütün binalar aynı tarzda (aynı çizgi kalınlığı, aynı renk doygunluğu).
+6. **Tarz:** Bütün binalar aynı tarzda (aynı çizgi kalınlığı, aynı renk doygunluğu). Ayrıntılar: `docs/Gorsel-Tarz-Rehberi.md`.
 
 Görsel karede biraz büyük ya da küçük durursa `js/data.js` içinde o binaya `spriteScale: 1.1` gibi bir ayar eklenir.

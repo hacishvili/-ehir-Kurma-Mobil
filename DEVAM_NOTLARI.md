@@ -34,3 +34,10 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 **Açık**
 - Görsel tarzı kararı (çizgi film / low-poly / gerçekçi) kullanıcıda.
 - Higgsfield bakiyesi 0,4 kredi; bir görsel 0,75 kredi. Higgsfield ile üretim için kredi gerekli.
+
+## 2026-11-23 — Görsel tarz rehberi (taslak)
+
+- Kullanıcı Millionaire City ekran görüntüleri gönderdi. Çıkan dersler `docs/Gorsel-Tarz-Rehberi.md` içinde: her bina kendi bahçesiyle, doygun sıcak renkler, tek bakışta tanınan işaret, ince dış çizgi.
+- Kararlar (onay bekliyor): yarı gerçekçi elle boyanmış tarz, izometrik açı korunuyor, yerel Türk kasabası tonu, tabelalarda yazı yok.
+- Rehberde 10 bina için tarif ve Higgsfield komut şablonu var.
+- Sırada: kullanıcı Higgsfield'a kredi yükleyince ilk bina (müstakil ev) üretilip oyunda denenecek.
