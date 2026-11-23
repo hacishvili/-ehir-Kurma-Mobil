@@ -3,6 +3,7 @@
 Kullanım:
     python3 tools/yol_hazirla.py            # img/kaynak/yollar/<tür>-duz.png olan her tür
     python3 tools/yol_hazirla.py yol-tas    # yalnız bir tür
+    python3 tools/yol_hazirla.py kavsak     # yalnız 3x3 döner kavşak (donel-kavsak.png -> kavsak.png)
 
 Girdi: img/kaynak/yollar/<tür>-duz.png. Tam üstten çekilmiş, yukarıdan aşağı inen düz yol,
 yol dışı pembe (#FF00FF).
@@ -61,11 +62,15 @@ def make_tileable(a):
     w = np.linspace(0, 1, k)[:, None, None]
     out = a[k:].copy()
     out[-k:] = a[N - k:] * (1 - w) + a[:k] * w
-    im = Image.fromarray(np.clip(out, 0, 255).astype(np.uint8)).resize((N, N), Image.LANCZOS)
+    im = Image.fromarray(np.clip(out, 0, 255).astype(np.uint8)).resize((a.shape[1], N), Image.LANCZOS)
     return np.asarray(im).astype(np.float32)
 
 
-def widen(a, left, right):
+# Aynalanacak yol yüzeyini kenar taşından bu kadar piksel içeriden başlat (taşın iç çizgisi içeri kopyalanmasın)
+MIRROR_PAD = {'bulvar': 6}
+
+
+def widen(a, left, right, pad=0):
     """Bandı karenin ortasına alıp BAND genişliğine getirir. Kenar taşları aynen kalır,
     aradaki yol yüzeyi aynalanarak uzatılır (taşlar basık görünmesin diye esnetilmez)."""
     curb = estimate_curb(a, left, right)
@@ -78,7 +83,7 @@ def widen(a, left, right):
     src[L:L + curb] = left + np.arange(curb)
     src[R - curb + 1:R + 1] = right - curb + 1 + np.arange(curb)
     inner = np.arange(L + curb, R - curb + 1)
-    lo, hi = left + curb, right - curb
+    lo, hi = left + curb + pad, right - curb - pad
     centre = (lo + hi) / 2 - (L + R) / 2
     src[L + curb:R - curb + 1] = mirror(inner + centre, lo, hi).round().astype(int)
     out[:, cols[src >= 0]] = a[:, src[src >= 0]]
@@ -224,11 +229,13 @@ BRIDGES = {
     'cadde': ('cadde-kopru.png', (360, 660)),
     'yol': ('yol-kopru.png', (380, 650)),
     'yol-tas': ('yol-tas-kopru.png', (410, 620)),
+    # bulvar köprüsü kenarlara değmiyor: uçtaki direkler kesilir (satırlar, 1024 yükseklikte)
+    'bulvar': ('bulvar-kopru.png', (430, 594), (80, 470)),  # 3 saksı aralığı: kare başı kesintisiz döner
 }
 
 
 def make_bridge(kind, land, left, right):
-    name, (s0, s1) = BRIDGES[kind]
+    name, (s0, s1), *crop = BRIDGES[kind]
     path = SRC / name
     if not path.exists():
         return False
@@ -237,13 +244,13 @@ def make_bridge(kind, land, left, right):
     bg = background(full)
     cols = np.where((~bg[h // 4: 3 * h // 4]).mean(0) > 0.5)[0]
     rows = np.where((~bg[:, (s0 + s1) // 2 * w // 1024]))[0]
-    full = full[rows.min():rows.max() + 1]
+    full = full[crop[0][0] * h // 1024:crop[0][1] * h // 1024] if crop else full[rows.min():rows.max() + 1]
     curb = estimate_curb(land, left, right)
     target = (right - curb) - (left + curb) + 1  # karadaki yol yüzeyi (piksel)
     scale = target / ((s1 - s0) * w / 1024)
     nw = int(round(w * scale))
     im = Image.fromarray(full.astype(np.uint8)).resize((nw, N), Image.LANCZOS)
-    a = make_tileable(np.asarray(im).astype(np.float32)) if nw == N else np.asarray(im).astype(np.float32)
+    a = make_tileable(np.asarray(im).astype(np.float32)) if nw == N and not crop else np.asarray(im).astype(np.float32)
     # yüzeyin ortası karenin ortasına gelsin
     centre = (s0 + s1) / 2 * w / 1024 * scale
     off = int(round(N / 2 - centre))
@@ -260,18 +267,42 @@ def make_bridge(kind, land, left, right):
     return True
 
 
+def make_roundabout():
+    """3x3 karelik döner kavşak: img/kaynak/yollar/donel-kavsak.png (dört kol kenar ortalarından çıkar).
+    Kollar diğer yollarla aynı genişlikte olsun diye ölçeklenip ortadan kırpılır; çıktı img/yollar/kavsak.png."""
+    path = SRC / 'donel-kavsak.png'
+    if not path.exists():
+        return False
+    im = Image.open(path).convert('RGB')
+    a = np.asarray(im).astype(np.float32)
+    h, w = a.shape[:2]
+    cols = np.where(~background(a)[2])[0]  # üst kenardaki kolun genişliği
+    arm = cols.max() - cols.min() + 1
+    k = (BAND * w / 3) / arm
+    big = im.resize((round(w * k), round(h * k)), Image.LANCZOS)
+    cx, cy = (cols.min() + cols.max() + 1) / 2 * k, big.height / 2
+    big = big.crop((round(cx - w / 2), round(cy - h / 2), round(cx + w / 2), round(cy + h / 2))).resize((3 * N, 3 * N), Image.LANCZOS)
+    a = np.asarray(big).astype(np.float32)
+    alpha = np.where(background(a), 0, 255).astype(np.uint8)
+    out = np.dstack([a.astype(np.uint8), alpha])
+    Image.fromarray(out, 'RGBA').save(OUT / 'kavsak.png', optimize=True)
+    return True
+
+
 def main():
-    kinds = sys.argv[1:] or [p.stem[:-4] for p in sorted(SRC.glob('*-duz.png'))]
+    kinds = [k for k in sys.argv[1:] if k != 'kavsak'] if sys.argv[1:] else [p.stem[:-4] for p in sorted(SRC.glob('*-duz.png'))]
     OUT.mkdir(parents=True, exist_ok=True)
     for kind in kinds:
         a, left, right = load_straight(SRC / f'{kind}-duz.png')
-        a, left, right = widen(a, left, right)
+        a, left, right = widen(a, left, right, MIRROR_PAD.get(kind, 0))
         for mask in range(16):
             rgb, alpha = build(a, left, right, mask)
             out = np.dstack([np.clip(rgb, 0, 255), alpha * 255]).astype(np.uint8)
             Image.fromarray(out, 'RGBA').save(OUT / f'{kind}-{mask}.png', optimize=True)
         bridge = make_bridge(kind, a, left, right) if kind in BRIDGES else False
         print(f'{kind}: yol {left}-{right} / {N}, kenar taşı {estimate_curb(a, left, right)} px, 16 parça' + (', köprü' if bridge else ''))
+    if not sys.argv[1:] or 'kavsak' in sys.argv[1:]:
+        print('döner kavşak:', 'hazır' if make_roundabout() else 'kaynak yok')
 
 
 if __name__ == '__main__':

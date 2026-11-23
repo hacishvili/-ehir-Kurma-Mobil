@@ -62,6 +62,18 @@ export function createAmbient(R) {
     return { color: rnd(CAR_COLORS), kind, hue: Math.floor(Math.random() * CAR_KINDS[kind].hues.length), speed: (kind === 'dolmus' ? 0.75 : 0.9) + Math.random() * 0.6 };
   }
   const isRoad = (s, x, y) => G.inBounds(x, y) && G.isRoadConnected(s, x, y);
+  // Döner kavşakta halka tek yönlü (saat yönünün tersi); sağ şeritten gidilir
+  const RING = [[1, 0], [0, 0], [0, 1], [0, 2], [1, 2], [2, 2], [2, 1], [2, 0]];
+  const RING_R = 0.64; // halkanın orta çizgisi, kavşak merkezinden (kare)
+  const ringIndex = (k, x, y) => RING.findIndex(([rx, ry]) => k.x + rx === x && k.y + ry === y);
+  // (x, y) karesinden komşu (nx, ny) karesine geçilebilir mi
+  function canMove(s, x, y, nx, ny) {
+    if (!isRoad(s, nx, ny) || !G.roadLink(s, x, y, nx, ny)) return false;
+    const k = G.roundaboutAt(s, x, y);
+    if (!k || k !== G.roundaboutAt(s, nx, ny)) return true;
+    return ringIndex(k, nx, ny) === (ringIndex(k, x, y) + 1) % RING.length;
+  }
+  const moves = (s, x, y) => DIRS.map(([dx, dy]) => [x + dx, y + dy]).filter(([nx, ny]) => canMove(s, x, y, nx, ny));
   const onEdge = (x, y) => x === 0 || y === 0 || x === CONFIG.gridSize - 1 || y === CONFIG.gridSize - 1;
 
   // Kare içindeki kesirli bir noktanın ekran konumu; h: yerden yükseklik (piksel, yakınlaştırma 1'de)
@@ -75,7 +87,7 @@ export function createAmbient(R) {
   function spawnWalker(s, list, extra) {
     if (!roads.length) return;
     const [x, y] = rnd(roads);
-    const next = DIRS.map(([dx, dy]) => [x + dx, y + dy]).filter(([nx, ny]) => isRoad(s, nx, ny));
+    const next = moves(s, x, y);
     const [nx, ny] = next.length ? rnd(next) : [x, y];
     list.push({ x, y, nx, ny, p: Math.random(), ...extra });
   }
@@ -91,7 +103,7 @@ export function createAmbient(R) {
     for (const list of [cars, people]) {
       for (let i = list.length - 1; i >= 0; i--) {
         const a = list[i];
-        if (!isRoad(s, a.x, a.y) || !isRoad(s, a.nx, a.ny)) list.splice(i, 1);
+        if (!isRoad(s, a.x, a.y) || !isRoad(s, a.nx, a.ny) || ((a.x !== a.nx || a.y !== a.ny) && !G.roadLink(s, a.x, a.y, a.nx, a.ny))) list.splice(i, 1);
       }
     }
   }
@@ -119,7 +131,7 @@ export function createAmbient(R) {
       const [x, y] = q[i];
       for (const [dx, dy] of DIRS) {
         const nx = x + dx, ny = y + dy;
-        if (isRoad(s, nx, ny) && dist[ny * n + nx] < 0) { dist[ny * n + nx] = dist[y * n + x] + 1; q.push([nx, ny]); }
+        if (dist[ny * n + nx] < 0 && G.inBounds(nx, ny) && canMove(s, nx, ny, x, y)) { dist[ny * n + nx] = dist[y * n + x] + 1; q.push([nx, ny]); }
       }
     }
     a.tx = tx; a.ty = ty; a.dist = dist; a.distVersion = version;
@@ -142,7 +154,7 @@ export function createAmbient(R) {
         pickTarget(s, a);
       }
       const here = a.dist[a.y * n + a.x];
-      const opts = DIRS.map(([dx, dy]) => [a.x + dx, a.y + dy]).filter(([nx, ny]) => isRoad(s, nx, ny));
+      const opts = moves(s, a.x, a.y);
       // hedefe yaklaştıran kareler; yoksa (hedefe yol kalmadı) geri dönmeden rastgele
       let best = opts.filter(([nx, ny]) => a.dist[ny * n + nx] >= 0 && a.dist[ny * n + nx] < here);
       if (!best.length) best = opts.filter(([nx, ny]) => !(nx === px && ny === py));
@@ -160,15 +172,14 @@ export function createAmbient(R) {
       a.p -= 1;
       const px = a.x, py = a.y;
       a.x = a.nx; a.y = a.ny;
-      let opts = DIRS.map(([dx, dy]) => [a.x + dx, a.y + dy])
-        .filter(([nx, ny]) => isRoad(s, nx, ny) && !(nx === px && ny === py));
+      let opts = moves(s, a.x, a.y).filter(([nx, ny]) => !(nx === px && ny === py));
       if (!opts.length) {
         if (isCar && onEdge(a.x, a.y)) {
           // haritanın kenarından çıkan araba başka bir kenardan girer
           const edges = roads.filter(([x, y]) => onEdge(x, y));
           const [ex, ey] = rnd(edges.length ? edges : roads);
           a.x = ex; a.y = ey;
-          opts = DIRS.map(([dx, dy]) => [ex + dx, ey + dy]).filter(([nx, ny]) => isRoad(s, nx, ny));
+          opts = moves(s, ex, ey);
           if (!opts.length) opts = [[ex, ey]];
         } else {
           opts = [[px, py]]; // çıkmaz: geri dön
@@ -180,17 +191,42 @@ export function createAmbient(R) {
     }
   }
 
+  // Döner kavşaktaki karenin halka üstündeki noktası (kare ortası yerine); kavşak dışında null
+  function ringPoint(k, x, y, lane) {
+    const cx = k.x + 1.5, cy = k.y + 1.5;
+    const ang = Math.atan2(y + 0.5 - cy, x + 0.5 - cx);
+    return [cx + Math.cos(ang) * (RING_R + lane), cy + Math.sin(ang) * (RING_R + lane)];
+  }
+
   function pose(a, lane) {
-    const fx = a.x + (a.nx - a.x) * a.p + 0.5;
-    const fy = a.y + (a.ny - a.y) * a.p + 0.5;
     let dx = a.nx - a.x, dy = a.ny - a.y;
     if (!dx && !dy) dx = 1;
+    const s = lastState;
+    const k0 = s && G.roundaboutAt(s, a.x, a.y), k1 = s && G.roundaboutAt(s, a.nx, a.ny);
+    if (k0 && k0 === k1) {
+      // halkada: iki nokta arasındaki açıyla dön (saat yönünün tersi), sağ şerit dışta
+      const cx = k0.x + 1.5, cy = k0.y + 1.5;
+      const t0 = Math.atan2(a.y + 0.5 - cy, a.x + 0.5 - cx);
+      let t1 = Math.atan2(a.ny + 0.5 - cy, a.nx + 0.5 - cx);
+      while (t1 > t0) t1 -= Math.PI * 2;
+      const th = t0 + (t1 - t0) * a.p, r = RING_R + lane;
+      return { fx: cx + Math.cos(th) * r, fy: cy + Math.sin(th) * r, dx: Math.sin(th), dy: -Math.cos(th) };
+    }
     // sağ şerit: gidiş yönüne dik kaydır
-    return { fx: fx - dy * lane, fy: fy + dx * lane, dx, dy };
+    const p0 = k0 ? ringPoint(k0, a.x, a.y, lane) : [a.x + 0.5 - dy * lane, a.y + 0.5 + dx * lane];
+    const p1 = k1 ? ringPoint(k1, a.nx, a.ny, lane) : [a.nx + 0.5 - dy * lane, a.ny + 0.5 + dx * lane];
+    return { fx: p0[0] + (p1[0] - p0[0]) * a.p, fy: p0[1] + (p1[1] - p0[1]) * a.p, dx, dy };
+  }
+
+  // Yön vektörünü dört ana yönden birine yuvarla (görsel ve kodla çizim için)
+  function axis(dx, dy) {
+    return Math.abs(dx) >= Math.abs(dy) ? [Math.sign(dx) || 1, 0] : [0, Math.sign(dy)];
   }
 
   function drawCar(a) {
-    const { fx, fy, dx, dy } = pose(a, 0.12);
+    const ps = pose(a, 0.12);
+    const { fx, fy } = ps;
+    const [dx, dy] = axis(ps.dx, ps.dy);
     // sağ-aşağı (x+) 'on', sağ-yukarı (y-) 'arka'; sola gidenler aynalanır
     const imgs = carImgs[`${a.kind}-${dx > 0 || dy > 0 ? 'on' : 'arka'}`];
     if (imgs) {
@@ -351,7 +387,9 @@ export function createAmbient(R) {
   // ---------- Dışa açılanlar ----------
 
   let lastT = 0;
+  let lastState = null; // pose() döner kavşağı bulmak için
   function update(s, t) {
+    lastState = s;
     const dt = Math.min(0.1, Math.max(0, (t - lastT) / 1000));
     lastT = t;
     if (!enabled) { cars.length = 0; people.length = 0; particles.length = 0; return; }

@@ -262,4 +262,8 @@ Görseller (Claude, ~50 kredi): kaynaklar `img/kaynak/`, doğa ve mevsim ağaçl
   `python3 tools/araba_hazirla.py` pembe arka planı siler. Sola giden yönler aynalanır; sedan ve hatchback
   hue-rotate ile renklendirilir. Görsel yüklenmezse eski kodla çizim devreye girer. Panelvan ve pikap görseli yok.
 - Yol modu: boş yerden sürükleme haritayı kaydırır, dokunmak tek kare yol koyar, yoldan/caddeden başlayan sürükleme yol çizer.
-- Bekleyenler: bulvar düz + köprü, 3x3 döner kavşak görselleri (kullanıcı yükleyecek).
+- Bulvar görselle çiziliyor (bulvar-duz, bulvar-kopru; köprü kaynağında uçtaki direkler kesilir, 3 saksı aralığı bir kare).
+- Döner kavşak (`kavsak`, 3x3, cat 'yol', Sv 5, 400): yol çubuğundan seçilir, dokunulan kare ortası olur.
+  Yalnız dört kenarın ortasındaki koldan bağlanır (game.js linkOk/roadLink), ortası yol değil.
+  Görsel img/yollar/kavsak.png tek parça (render.js drawRoundabouts). Arabalar halkada saat yönünün tersine döner (ambient.js canMove/pose).
+- Tepe arazisindeki yollar da artık görselle çiziliyor.

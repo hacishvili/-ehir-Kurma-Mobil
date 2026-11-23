@@ -239,7 +239,40 @@ function isRoadTile(grid, x, y) {
   if (!inBounds(x, y)) return false;
   if (isAvenue(x, y)) return true;
   const b = grid[y][x];
-  return !!b && isRoadType(b.type);
+  if (!b || !isRoadType(b.type)) return false;
+  // döner kavşağın ortası (havuz) yol değil
+  return !(sizeOf(b) === 3 && x === b.x + 1 && y === b.y + 1);
+}
+
+// Döner kavşak (3x3 yol): dışarıyla yalnız dört kenarın ortasındaki koldan bağlanır
+function roundaboutOf(grid, x, y) {
+  const b = inBounds(x, y) ? grid[y][x] : null;
+  return b && sizeOf(b) === 3 && isRoadType(b.type) ? b : null;
+}
+
+function armOk(k, x, y, ox, oy) {
+  const rx = x - k.x, ry = y - k.y;
+  return (rx === 1 && ((ry === 0 && oy < y) || (ry === 2 && oy > y))) ||
+    (ry === 1 && ((rx === 0 && ox < x) || (rx === 2 && ox > x)));
+}
+
+// İki komşu yol karesi arasında geçiş var mı (araba ve bağlantı için)
+function linkOk(grid, x, y, nx, ny) {
+  if (!isRoadTile(grid, x, y) || !isRoadTile(grid, nx, ny)) return false;
+  const a = roundaboutOf(grid, x, y), c = roundaboutOf(grid, nx, ny);
+  if (a && a === c) return true;
+  if (a && !armOk(a, x, y, nx, ny)) return false;
+  if (c && !armOk(c, nx, ny, x, y)) return false;
+  return true;
+}
+
+export function roadLink(s, x, y, nx, ny) {
+  return linkOk(cache(s).grid, x, y, nx, ny);
+}
+
+// (x, y) bir döner kavşağın parçasıysa o yapı
+export function roundaboutAt(s, x, y) {
+  return roundaboutOf(cache(s).grid, x, y);
 }
 
 // Ana caddeden başlayıp yollar üzerinden ulaşılabilen kareleri bulur.
@@ -258,7 +291,7 @@ function computeConnected(grid) {
     const [x, y] = queue.pop();
     for (const [dx, dy] of dirs) {
       const nx = x + dx, ny = y + dy;
-      if (isRoadTile(grid, nx, ny) && !roadOk[ny][nx]) {
+      if (linkOk(grid, x, y, nx, ny) && !roadOk[ny][nx]) {
         roadOk[ny][nx] = true;
         queue.push([nx, ny]);
       }
@@ -282,7 +315,7 @@ export function footprintNeighbors(x, y, n) {
   return out;
 }
 
-// Bina kaç kare kaplıyor (kenar uzunluğu): 1 ya da 2
+// Bina kaç kare kaplıyor (kenar uzunluğu): 1, 2 ya da 3 (döner kavşak)
 export function sizeOf(typeOrBuilding) {
   const type = typeof typeOrBuilding === 'string' ? typeOrBuilding : typeOrBuilding.type;
   return BUILDINGS[type]?.size || 1;
@@ -861,7 +894,7 @@ export function canPlace(s, x, y, ignoreId = null, size = 1, type = null) {
       if (isAvenue(tx, ty)) return fail('Ana caddeye bina yapılamaz.');
       const ter = terrainAt(tx, ty);
       // nehrin üstüne yalnız yol yapılabilir (köprü)
-      const bridge = ter === 'nehir' && type && isRoadType(type);
+      const bridge = ter === 'nehir' && type && isRoadType(type) && size === 1;
       if (ter && !TERRAIN[ter].buildable && !bridge) return fail(`${TERRAIN[ter].name} üstüne bina yapılamaz.${ter === 'nehir' ? ' Yol yaparsan köprü olur.' : ''}`);
       const b = buildingAt(s, tx, ty);
       if (b && b.id !== ignoreId) return fail(size > 1 ? `Bu bina ${size}×${size} kare ister; yer dolu.` : 'Bu kare dolu.');

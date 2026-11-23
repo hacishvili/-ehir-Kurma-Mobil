@@ -91,6 +91,9 @@ export const BUILDINGS = {
     effect: { radius: 1, all: 1, tenants: { emekli: 2, sanatci: 2 } } },
   bulvar: { name: 'Ağaçlı Bulvar', cat: 'yol', icon: '🌳', cost: 60, unlock: 6,
     effect: { radius: 1, all: 2 } },
+  // 3x3 döner kavşak: yollara yalnız dört kenarın ortasından bağlanır
+  kavsak: { name: 'Döner Kavşak', cat: 'yol', icon: '⭕', cost: 400, unlock: 5, size: 3,
+    effect: { radius: 1, all: 2 } },
 
   ev: {
     name: 'Müstakil Ev', cat: 'konut', icon: '🏠', cost: 250, unlock: 1,

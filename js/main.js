@@ -375,6 +375,13 @@ function paintRoad(tx, ty, isFirst) {
     if (b && G.isRoadType(b.type)) G.sell(s, b.id);
     return;
   }
+  if (G.sizeOf(roadType) > 1) {
+    // döner kavşak: sürüklerken değil, dokununca; dokunulan kare ortası olur
+    if (!isFirst) return;
+    const r = G.build(s, roadType, tx - 1, ty - 1);
+    if (!r.ok) toast(r.msg, true);
+    return;
+  }
   if (b || G.isAvenue(tx, ty)) return;
   const r = G.build(s, roadType, tx, ty);
   if (!r.ok && isFirst) toast(r.msg, true);
@@ -397,7 +404,9 @@ function updateRoadBar() {
     return `<button type="button" class="chip road-type ${roadType === id ? 'on' : ''}" data-road="${id}" ${locked ? 'disabled' : ''}>${d.icon} ${d.name}${locked ? ` · Sv ${d.unlock}` : d.cost ? ` · ${d.cost}` : ' · bedava'}</button>`;
   }).join('');
   $('placeInfo').innerHTML = `<b>${roadErase ? 'Yol sil' : 'Yol yap'}</b><div class="road-types">${chips}</div>
-    <span>Dokununca yol konur. Yoldan ya da caddeden başlayıp sürükleyerek çiz; boş yerden sürüklersen harita kayar. Binalar bağlı bir yola komşu olmalı. Nehrin üstüne yol köprü olur.</span>`;
+    <span>${!roadErase && G.sizeOf(roadType) > 1
+      ? 'Döner kavşak 3×3 kare kaplar: ortası olacak kareye dokun. Yollar yalnız dört kolun ucuna bağlanır.'
+      : 'Dokununca yol konur. Yoldan ya da caddeden başlayıp sürükleyerek çiz; boş yerden sürüklersen harita kayar. Binalar bağlı bir yola komşu olmalı. Nehrin üstüne yol köprü olur.'}</span>`;
   for (const el of $('placeInfo').querySelectorAll('[data-road]')) {
     el.onclick = () => { roadType = el.dataset.road; roadErase = false; updateRoadBar(); };
   }

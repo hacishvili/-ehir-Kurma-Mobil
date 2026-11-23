@@ -37,7 +37,7 @@ export const NATURE = {
 };
 // Ağaçlar evlerle orantılı kalsın: tek katlı ev bir karenin tamamını kaplar, ağaç onun yarısı kadar
 const TREE_SCALE = 0.5;
-const ROAD_IMAGE_TYPES = ['yol', 'yol-tas']; // görseli olan yol türleri (bulvar henüz kodla çiziliyor)
+const ROAD_IMAGE_TYPES = ['yol', 'yol-tas', 'bulvar']; // görseli olan yol türleri (img/yollar)
 const NATURE_TOTAL = Object.values(NATURE).reduce((a, n) => a + n.weight, 0);
 // Mevsime göre ağaç görünümü: tür → img/doga/<görsel>. null: o mevsimde çizilmez
 const SEASON_TREES = {
@@ -115,6 +115,10 @@ export function loadSprites(onLoad = () => {}) {
       img.src = `img/yollar/${kind}-${m}.png`;
     }
   }
+  // 3x3 döner kavşak tek görsel
+  const kavsak = new Image();
+  kavsak.onload = () => { sprites['yol-kavsak'] = kavsak; sprites['yol-kavsak-off'] = tinted(kavsak); };
+  kavsak.src = 'img/yollar/kavsak.png';
   sprites['doku-deniz'] = seaTexture();
   // mahalle zemini (beton)
   const beton = new Image();
@@ -389,12 +393,14 @@ export function createRenderer(canvas) {
         let terImg = ter === 'deniz' ? null : ter ? sprites[TERRAIN[ter].sprite] : bridge ? sprites[TERRAIN.nehir.sprite] : null;
         // Sanayi ve İş Merkezi'nde açık arsalar beton
         const road = b && G.isRoadType(b.type) ? b.type : null;
+        // döner kavşağın kareleri: zemin çizilir, görsel ayrıca 3x3 tek parça (drawRoundabouts)
+        const ringImg = road && G.sizeOf(road) === 3 && sprites['yol-kavsak'];
         // görselli yol: bant karenin ortasından geçer, kenarında zemin görünür
         const avenue = G.isAvenue(x, y);
         const onRiver = ter === 'nehir' || bridge;
-        const roadImg = avenue ? roadSprite(s, x, y, avenueKind(), onRiver) : road && (!ter || ter === 'nehir') ? roadSprite(s, x, y, road, onRiver) : null;
-        if (!terImg && ter !== 'deniz' && hood.groundTile && unlocked && (!(avenue || road) || roadImg)) terImg = sprites[hood.groundTile] || null;
-        if (roadImg) fill = null;
+        const roadImg = avenue ? roadSprite(s, x, y, avenueKind(), onRiver) : road && (!ter || ter === 'nehir' || ter === 'tepe') ? roadSprite(s, x, y, road, onRiver) : null;
+        if (!terImg && ter !== 'deniz' && hood.groundTile && unlocked && (!(avenue || road) || roadImg || ringImg)) terImg = sprites[hood.groundTile] || null;
+        if (roadImg || ringImg) fill = null;
         else if (avenue) fill = GROUND.avenue;
         else if (road) fill = !G.isRoadConnected(s, x, y) ? GROUND.roadOff : road === 'yol-tas' ? GROUND.cobble : GROUND.road;
         if (terImg) {
@@ -428,6 +434,17 @@ export function createRenderer(canvas) {
     }
   }
 
+  // Döner kavşaklar zeminin üstüne, binalardan önce tek parça çizilir
+  function drawRoundabouts(s) {
+    const img = sprites['yol-kavsak'];
+    if (!img) return;
+    for (const b of Object.values(s.buildings)) {
+      if (!G.isRoadType(b.type) || G.sizeOf(b) !== 3) continue;
+      const off = !G.isRoadConnected(s, b.x + 1, b.y); // halka kendi içinde bağlı: bir karesi yeter
+      drawSquare(b.x, b.y, off ? sprites['yol-kavsak-off'] : img, 3);
+    }
+  }
+
   // Komşu yollara göre parça: kuzey (y-1) 1, doğu (x+1) 2, güney (y+1) 4, batı (x-1) 8
   // Ana cadde kendi görseliyle (cadde-*), yüklenmediyse asfalt yolla çizilir
   function avenueKind() { return sprites['yol-cadde-5'] ? 'cadde' : 'yol'; }
@@ -438,8 +455,7 @@ export function createRenderer(canvas) {
     const isRoad = (nx, ny) => {
       if (!G.inBounds(nx, ny)) return outsideAvenue(nx, ny);
       if (G.isAvenue(nx, ny)) return true;
-      const nb = G.buildingAt(s, nx, ny);
-      return !!nb && G.isRoadType(nb.type);
+      return G.roadLink(s, x, y, nx, ny); // döner kavşağa yalnız kol ucundan bağlanır
     };
     const m = (isRoad(x, y - 1) ? 1 : 0) | (isRoad(x + 1, y) ? 2 : 0) | (isRoad(x, y + 1) ? 4 : 0) | (isRoad(x - 1, y) ? 8 : 0);
     const off = !G.isAvenue(x, y) && G.inBounds(x, y) && !G.isRoadConnected(s, x, y);
@@ -449,9 +465,9 @@ export function createRenderer(canvas) {
   }
 
   // Tam üstten çizilmiş kare görseli karenin baklavasına yatır (sol üst köşe = karenin üst ucu)
-  function drawSquare(x, y, img) {
+  function drawSquare(x, y, img, tiles = 1) {
     const [sx, sy] = toScreen(x, y);
-    const n = img.naturalWidth || img.width;
+    const n = (img.naturalWidth || img.width) / tiles;
     const a = (TW / 2) * cam.z / n, b = (TH / 2) * cam.z / n;
     ctx.save();
     ctx.transform(a, b, -a, b, sx, sy);
@@ -927,6 +943,7 @@ export function createRenderer(canvas) {
     updateScenery(s, t);
     drawSceneryLayer(scenery.back);
     drawGround(s, view);
+    drawRoundabouts(s);
     drawParcels(s);
     const nature = natureItems(s, t, !!(amb && amb.enabled), 'inside');
 

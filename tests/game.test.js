@@ -695,3 +695,21 @@ test('haftalık hedefler: haftada 3 hedef, ilerleme ve elmas', () => {
   assert.ok(G.claimWeekly(s, 0).ok);
   assert.equal(s.diamonds, d + CONFIG.weeklyDiamonds);
 });
+
+test('döner kavşak 3x3 kaplar, yalnız dört kolun ucundan bağlanır', () => {
+  const s = rich();
+  for (let py = 0; py < 3; py++) for (let px = 1; px < 4; px++) G.buyParcel(s, px, py);
+  const [ox, oy] = HOODS.eski.origin;
+  const link = (x, y, nx, ny) => G0.roadLink(s, x + ox, y + oy, nx + ox, ny + oy);
+  const r = G.build(s, 'kavsak', AX + 1, 4); // 6..8 x 4..6, sol kolu (6,5) caddeye komşu
+  assert.ok(r.ok, r.msg);
+  assert.equal(G.buildingAt(s, 8, 6).id, r.id);
+  assert.equal(G.isRoadConnected(s, 6, 5), true, 'sol kol caddeye bağlı');
+  assert.equal(G.isRoadConnected(s, 7, 5), false, 'ortadaki havuz yol değil');
+  assert.equal(link(5, 5, 6, 5), true);
+  assert.equal(link(5, 4, 6, 4), false, 'köşeden bağlanmaz');
+  assert.ok(G.build(s, 'yol', 9, 4).ok);
+  assert.equal(G.isRoadConnected(s, 9, 4), false, 'köşenin yanındaki yol bağlı değil');
+  assert.ok(G.build(s, 'yol', 9, 5).ok);
+  assert.equal(G.isRoadConnected(s, 9, 4), true, 'sağ kola bağlanınca bağlı');
+});
