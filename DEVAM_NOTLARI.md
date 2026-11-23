@@ -250,3 +250,5 @@ Görseller (Claude, ~50 kredi): kaynaklar `img/kaynak/`, doğa ve mevsim ağaçl
 - Kullanılmayan yapay zekâ parçaları `img/kaynak/yollar/kullanilmayan-*.png`; `donel-kavsak.png` döner ada için saklandı (2×2 yapı olarak eklenecek).
 - Sürüm 0.4.2 (sürüm kodu 8).
 - **Ana caddeler de yol görseliyle** (0.4.3): cadde kareleri `yol` parçalarıyla çizilir, oyuncunun yollarıyla aynı kavşak parçalarını kullanır (orta şerit yalnız düz parçada). Nehri taş korkuluklu köprüyle geçer, harita dışına aynı görselle uzanır, kumsalda çıkmazla biter.
+- **Arabalar hedefe gider** (0.4.4, `stepCar` — `js/ambient.js`): önceden her kavşakta rastgele dönüyorlardı; oyuncunun yol ağına giren araba orada gidip gelip kalıyordu. Artık her araba bir hedef seçer (%45 harita kenarındaki cadde ucu, gerisi rastgele yol karesi) ve yol boyunca en kısa yoldan gider (BFS uzaklık haritası, yol değişince yenilenir). Varınca yeni hedef seçer; kenardaysa başka uçtan girer. Eşit seçenekte düz gitmeyi tercih eder.
+- Araba görselleri için 12 prompt: `docs/araba-gorselleri-promptlar.pdf` (6 araç × ön/arka; sola gidenler aynalanacak). Görseller `img/araclar/` klasörüne gelecek.

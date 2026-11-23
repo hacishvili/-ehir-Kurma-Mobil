@@ -72,7 +72,55 @@ export function createAmbient(R) {
     };
   }
 
+  // Arabalar hedefe gider: hedeften yol boyunca uzaklık haritası (BFS), yol değişince yenilenir.
+  // Hedef ya haritanın kenarındaki bir cadde ucu (oradan çıkar, başka uçtan girer) ya da rastgele bir yol karesi.
+  function pickTarget(s, a) {
+    const edges = roads.filter(([x, y]) => onEdge(x, y));
+    const [tx, ty] = edges.length && Math.random() < 0.45 ? rnd(edges) : rnd(roads);
+    const n = CONFIG.gridSize;
+    const dist = new Int16Array(n * n).fill(-1);
+    dist[ty * n + tx] = 0;
+    const q = [[tx, ty]];
+    for (let i = 0; i < q.length; i++) {
+      const [x, y] = q[i];
+      for (const [dx, dy] of DIRS) {
+        const nx = x + dx, ny = y + dy;
+        if (isRoad(s, nx, ny) && dist[ny * n + nx] < 0) { dist[ny * n + nx] = dist[y * n + x] + 1; q.push([nx, ny]); }
+      }
+    }
+    a.tx = tx; a.ty = ty; a.dist = dist; a.distVersion = version;
+  }
+
+  function stepCar(s, a, dist) {
+    a.p += dist;
+    const n = CONFIG.gridSize;
+    while (a.p >= 1) {
+      a.p -= 1;
+      const px = a.x, py = a.y;
+      a.x = a.nx; a.y = a.ny;
+      if (!a.dist || a.distVersion !== version) pickTarget(s, a);
+      if (a.x === a.tx && a.y === a.ty) {
+        if (onEdge(a.x, a.y)) {
+          // kenardan çıkan araba başka bir kenardan girer
+          const edges = roads.filter(([x, y]) => onEdge(x, y));
+          [a.x, a.y] = rnd(edges.length ? edges : roads);
+        }
+        pickTarget(s, a);
+      }
+      const here = a.dist[a.y * n + a.x];
+      const opts = DIRS.map(([dx, dy]) => [a.x + dx, a.y + dy]).filter(([nx, ny]) => isRoad(s, nx, ny));
+      // hedefe yaklaştıran kareler; yoksa (hedefe yol kalmadı) geri dönmeden rastgele
+      let best = opts.filter(([nx, ny]) => a.dist[ny * n + nx] >= 0 && a.dist[ny * n + nx] < here);
+      if (!best.length) best = opts.filter(([nx, ny]) => !(nx === px && ny === py));
+      if (!best.length) best = opts.length ? opts : [[a.x, a.y]];
+      // eşit seçeneklerde düz gitmeyi tercih et
+      const straight = best.find(([nx, ny]) => nx - a.x === a.x - px && ny - a.y === a.y - py);
+      [a.nx, a.ny] = straight && Math.random() < 0.7 ? straight : rnd(best);
+    }
+  }
+
   function step(s, a, dist, isCar) {
+    if (isCar) return stepCar(s, a, dist);
     a.p += dist;
     while (a.p >= 1) {
       a.p -= 1;
@@ -327,6 +375,7 @@ export function createAmbient(R) {
     update, drawables, drawOverlay, burst, reset,
     get enabled() { return enabled; },
     set enabled(v) { enabled = !!v; },
+    get carList() { return cars; },
     get counts() { return { cars: cars.length, people: people.length, particles: particles.length }; },
   };
 }
