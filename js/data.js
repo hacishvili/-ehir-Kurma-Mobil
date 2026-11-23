@@ -59,7 +59,7 @@ export const BUILDINGS = {
   },
   villa: {
     name: 'Villa', cat: 'konut', icon: '🏡', cost: 2600, unlock: 6,
-    rentPerHour: 1000, height: 22, sparkle: { h: 24, spread: 0.18 }, // havuz parıltısı
+    rentPerHour: 1000, height: 22, sparkle: { x: -0.22, y: 0.31, h: 1, spread: 0.1 }, // havuz parıltısı (img/binalar/villa.png'deki havuz)
   },
 
   kafe: {
@@ -80,7 +80,7 @@ export const BUILDINGS = {
 
   park: {
     name: 'Park', cat: 'kamu', icon: '🌳', cost: 250, unlock: 1,
-    height: 0, sparkle: { h: 3, spread: 0.3 }, // çeşme suyunda parıltı
+    height: 0, sparkle: { h: 5, spread: 0.12 }, // çeşme suyunda parıltı
     effect: { radius: 1, all: 6, tenants: { aile: 8, emekli: 12 } },
   },
   okul: {

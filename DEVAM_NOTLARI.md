@@ -85,3 +85,10 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 - Atölye dumanı artık görseldeki bacanın tepesinden çıkıyor (`js/data.js` → `smoke`).
 - Gözlem: bu üç görselde de referans görsel eklenmemiş; market ve atölye ev/kafeden daha çizgi filmsi (kalın çizgi, marketteki elmanın yüzü var). Atölye binası bahçesine göre küçük kalıyor.
 - Kalan: villa, gece kulübü, okul, metro durağı.
+
+## 2026-11-23 — Son dört bina: Villa, Gece Kulübü, Okul, Metro
+
+- 10 binanın 10'unun da görseli var. Kaynaklar `img/kaynak/`, oyundakiler `img/binalar/`.
+- Parıltı yerleri görsellere göre ayarlandı: villa havuzu, park çeşmesi (`js/data.js` → `sparkle`, `js/ambient.js` artık x/y kaymasını okuyor).
+- Telefon boyutunda bütün binalarla şehir denendi, hata yok.
+- Bu dört görselde de referans görsel eklenmemişti; tarz yine de birbirine yakın.

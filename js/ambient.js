@@ -215,7 +215,7 @@ export function createAmbient(R) {
       if (d.sparkle && sparkTick && Math.random() < 0.7) {
         const sp = d.sparkle.spread;
         emit({
-          kind: 'spark', fx: b.x + 0.5 + (Math.random() - 0.5) * sp * 2, fy: b.y + 0.5 + (Math.random() - 0.5) * sp * 2,
+          kind: 'spark', fx: b.x + 0.5 + (d.sparkle.x || 0) + (Math.random() - 0.5) * sp * 2, fy: b.y + 0.5 + (d.sparkle.y || 0) + (Math.random() - 0.5) * sp * 2,
           h: d.sparkle.h + Math.random() * 3, vx: 0, vy: 0, vh: 0, life: 0, max: 0.7,
         });
       }
