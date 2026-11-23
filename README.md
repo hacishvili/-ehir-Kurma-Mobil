@@ -25,7 +25,7 @@ Prototipte olanlar:
 - Test için zaman hızlandırma (Menü → ×10 / ×60)
 - İlerleme telefonda saklanır (sunucu yok)
 
-Henüz olmayanlar (2. adım): emlak piyasası, diğer mahalleler, elmas, sosyal özellikler, ses, Higgsfield görselleri.
+Sıradaki (faz 2): ziyaretçiler, yeni kiracılar, daha çok hikaye, mevsimler.
 
 ## Nasıl çalıştırılır
 
