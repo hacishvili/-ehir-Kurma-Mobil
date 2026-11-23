@@ -37,6 +37,7 @@ export const NATURE = {
 };
 // Ağaçlar evlerle orantılı kalsın: tek katlı ev bir karenin tamamını kaplar, ağaç onun yarısı kadar
 const TREE_SCALE = 0.5;
+const ROAD_IMAGE_TYPES = ['yol', 'yol-tas']; // görseli olan yol türleri (bulvar henüz kodla çiziliyor)
 const NATURE_TOTAL = Object.values(NATURE).reduce((a, n) => a + n.weight, 0);
 // Mevsime göre ağaç görünümü: tür → img/doga/<görsel>. null: o mevsimde çizilmez
 const SEASON_TREES = {
@@ -104,11 +105,31 @@ export function loadSprites(onLoad = () => {}) {
     img.onload = () => { sprites[`doga-${name}`] = img; };
     img.src = `img/doga/${name}.png`;
   }
+  // yol parçaları: tür başına 16 görsel (komşu bağlantısına göre); bağlantısız yol için kırmızımsı kopya
+  for (const kind of ROAD_IMAGE_TYPES) {
+    for (let m = 0; m < 16; m++) {
+      const img = new Image();
+      img.onload = () => { sprites[`yol-${kind}-${m}`] = img; sprites[`yol-${kind}-${m}-off`] = tinted(img); };
+      img.src = `img/yollar/${kind}-${m}.png`;
+    }
+  }
   sprites['doku-deniz'] = seaTexture();
   // mahalle zemini (beton)
   const beton = new Image();
   beton.onload = () => { sprites['zemin-beton'] = beton; };
   beton.src = `${SPRITE_DIR}zemin-beton.png`;
+}
+
+// Yolu bağlı olmayan kare için görselin kırmızıya çalan kopyası (oyuncu hemen fark etsin)
+function tinted(img) {
+  const cv = document.createElement('canvas');
+  cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+  const c = cv.getContext('2d');
+  c.drawImage(img, 0, 0);
+  c.globalCompositeOperation = 'source-atop';
+  c.fillStyle = 'rgba(200,70,60,0.45)';
+  c.fillRect(0, 0, cv.width, cv.height);
+  return cv;
 }
 
 // Deniz dokusu (kodla): turkuaz zemin üstünde açık dalga çizgileri, dikişsiz tekrar eder
@@ -366,8 +387,11 @@ export function createRenderer(canvas) {
         let terImg = ter === 'deniz' ? null : ter ? sprites[TERRAIN[ter].sprite] : bridge ? sprites[TERRAIN.nehir.sprite] : null;
         // Sanayi ve İş Merkezi'nde açık arsalar beton
         const road = b && G.isRoadType(b.type) ? b.type : null;
-        if (!terImg && ter !== 'deniz' && hood.groundTile && unlocked && !G.isAvenue(x, y) && !road) terImg = sprites[hood.groundTile] || null;
+        // görselli yol: bant karenin ortasından geçer, kenarında zemin görünür
+        const roadImg = road && !ter && !bridge ? roadSprite(s, x, y, road) : null;
+        if (!terImg && ter !== 'deniz' && hood.groundTile && unlocked && !G.isAvenue(x, y) && (!road || roadImg)) terImg = sprites[hood.groundTile] || null;
         if (G.isAvenue(x, y)) fill = GROUND.avenue;
+        else if (roadImg) fill = null;
         else if (road) fill = !G.isRoadConnected(s, x, y) ? GROUND.roadOff : road === 'yol-tas' ? GROUND.cobble : GROUND.road;
         if (terImg) {
           drawTile(x, y, terImg);
@@ -386,6 +410,7 @@ export function createRenderer(canvas) {
           poly(d.pts, fill);
           if (road) drawRoadStyle(x, y, road);
         }
+        if (roadImg) drawSquare(x, y, roadImg);
         if (G.isAvenue(x, y)) avenueLine(d);
         // ızgara yalnız inşa ederken ve yol yaparken görünür
         if (view.grid && unlocked && !road && !G.isAvenue(x, y)) {
@@ -394,6 +419,31 @@ export function createRenderer(canvas) {
         }
       }
     }
+  }
+
+  // Komşu yollara göre parça: kuzey (y-1) 1, doğu (x+1) 2, güney (y+1) 4, batı (x-1) 8
+  function roadSprite(s, x, y, type) {
+    if (!ROAD_IMAGE_TYPES.includes(type)) return null;
+    const isRoad = (nx, ny) => {
+      if (!G.inBounds(nx, ny)) return false;
+      if (G.isAvenue(nx, ny)) return true;
+      const nb = G.buildingAt(s, nx, ny);
+      return !!nb && G.isRoadType(nb.type);
+    };
+    const m = (isRoad(x, y - 1) ? 1 : 0) | (isRoad(x + 1, y) ? 2 : 0) | (isRoad(x, y + 1) ? 4 : 0) | (isRoad(x - 1, y) ? 8 : 0);
+    const off = !G.isRoadConnected(s, x, y);
+    return sprites[`yol-${type}-${m}${off ? '-off' : ''}`] || null;
+  }
+
+  // Tam üstten çizilmiş kare görseli karenin baklavasına yatır (sol üst köşe = karenin üst ucu)
+  function drawSquare(x, y, img) {
+    const [sx, sy] = toScreen(x, y);
+    const n = img.naturalWidth || img.width;
+    const a = (TW / 2) * cam.z / n, b = (TH / 2) * cam.z / n;
+    ctx.save();
+    ctx.transform(a, b, -a, b, sx, sy);
+    ctx.drawImage(img, 0, 0);
+    ctx.restore();
   }
 
   // Yol türlerinin süsü: Arnavut kaldırımı taş deseni, bulvarda kenar ağaçları

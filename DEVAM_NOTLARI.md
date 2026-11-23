@@ -242,3 +242,10 @@ Görseller (Claude, ~50 kredi): kaynaklar `img/kaynak/`, doğa ve mevsim ağaçl
 - Çizim: yalnız ekrandaki kareler çizilir. Telefon boyutunda kaydırırken 53-60 kare/sn.
 - Testler: 49. Eski testler `local(id)` sarmalayıcısıyla mahallenin kendi koordinatlarında çalışır.
 - Sürüm 0.4.0 (sürüm kodu 6).
+
+## 2026-11-23 — Ağaç ve yol görselleri (0.4.1, 0.4.2)
+- **Ağaçlar** (0.4.1): oyuncunun ürettiği 13 doğa görseli `img/kaynak/doga/` altında; `tools/doga_hazirla.py` arka planı ve gölgeyi silip `img/doga/` içine yazar. Sonbahar meşesi gelmedi, eskisi duruyor.
+- **Yol görselleri** (0.4.2): Asfalt Yol ve Arnavut Kaldırımı artık görselle çizilir. Yapay zekâ her parçayı (dönemeç, T, dört yol, çıkmaz) ayrı çizince yol genişliği parçadan parçaya %18-41 arası değişti, yan yana oturmadı. Bu yüzden `tools/yol_hazirla.py` yalnız düz yol görselinden (`img/kaynak/yollar/<tür>-duz.png`) 16 parçayı hesaplar: `img/yollar/<tür>-<n>.png`, n = kuzey 1 + doğu 2 + güney 4 + batı 8. Bant karenin %60'ı (`BAND`), kenar taşı aynen kalır, yol yüzeyi aynalanarak genişletilir; dönemeç çeyrek halka.
+- Oyunda (`roadSprite`, `drawSquare` — `js/render.js`) parça komşu yol ve caddelere göre seçilir, kare görsel baklavaya yatırılır. Bağlantısız yol aynı görselin kırmızıya çalan kopyası. Nehirdeki yol hâlâ kodla çizilen köprü; Ağaçlı Bulvar görsel gelene kadar eskisi gibi.
+- Kullanılmayan yapay zekâ parçaları `img/kaynak/yollar/kullanilmayan-*.png`; `donel-kavsak.png` döner ada için saklandı (2×2 yapı olarak eklenecek).
+- Sürüm 0.4.2 (sürüm kodu 8).

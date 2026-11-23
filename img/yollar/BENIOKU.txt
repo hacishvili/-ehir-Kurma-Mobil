@@ -1,1 +1,0 @@
-Yol görsellerini bu klasöre koy (dosya adları docs/yol-gorselleri-promptlar.pdf içinde).
