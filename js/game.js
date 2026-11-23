@@ -1,10 +1,11 @@
 // Oyun mantığı. Ekran çizimi ve dokunma burada yok; böylece testler tarayıcısız çalışır.
 import { CONFIG, BUILDINGS, TENANTS, QUESTS, TERRAIN, COLLECTION, HOODS, TALL, MARKET_EVENTS, STORIES, DAILY_GOALS,
-  RESOURCES, MATS, UPGRADES, VARIANTS, INDUSTRY, ACHIEVEMENTS, VISITORS, WEEKLY_GOALS, SEASONS } from './data.js';
+  RESOURCES, MATS, UPGRADES, VARIANTS, INDUSTRY, ACHIEVEMENTS, VISITORS, WEEKLY_GOALS, SEASONS,
+  AVENUES, WORLD_TERRAIN } from './data.js';
 
 export const MIN = 60 * 1000;
 export const HOUR = 60 * MIN;
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2; // 2: tek büyük harita (1: her mahallenin ayrı haritası)
 
 // ---------- Durum ----------
 
@@ -19,14 +20,13 @@ export function createState() {
     savedAt: Date.now(),
     nextId: 1,
     parcels: CONFIG.startParcels.map(([px, py]) => `${px},${py}`),
-    parcelsPaid: 0,
+    parcelsPaid: {}, // mahalle -> arsalara ödenen toplam
     buildings: {},
     stats: { contractsSigned: 0, rentsCollected: 0, moneyEarned: 0 },
     questIndex: 0,
     questDone: false,
-    hood: 'eski',
+    hood: 'eski', // ekranın ortasındaki mahalle (fiyat ve endeks gösterimi için)
     hoodsOpen: ['eski'],
-    hoods: {}, // açık olup şu an görüntülenmeyen mahallelerin binaları ve arsaları
     diamonds: CONFIG.startDiamonds,
     collection: Object.fromEntries(Object.keys(COLLECTION).map(k => [k, 0])),
     collectionSets: 0,
@@ -42,6 +42,7 @@ export function hydrate(s) {
   for (const k of Object.keys(COLLECTION)) s.collection[k] = s.collection[k] || 0;
   if (s.collectionSets === undefined) s.collectionSets = 0;
   if (!s.hood) { s.hood = 'eski'; s.hoodsOpen = ['eski']; s.hoods = {}; }
+  if (s.v === 1) migrateToWorld(s);
   if (!s.rareUnlocked) s.rareUnlocked = [];
   if (!s.stats.storiesDone) s.stats.storiesDone = 0;
   for (const k of ['built', 'incomeCollected', 'renewals', 'goodsSold', 'visitorsHappy']) if (!s.stats[k]) s.stats[k] = 0;
@@ -55,7 +56,6 @@ export function hydrate(s) {
   if (!s.achieved) s.achieved = [];
   if (!s.market) s.market = { nextEventAt: s.gameTime + CONFIG.market.eventEveryHours * HOUR / 2, nextHistAt: s.gameTime, hoods: {} };
   for (const id of s.hoodsOpen) ensureMarket(s, id);
-  setActiveHood(s.hood);
   SEASON = currentSeason(s);
   Object.defineProperty(s, '_cache', { value: { version: -1 }, writable: true, enumerable: false });
   Object.defineProperty(s, 'events', { value: [], writable: true, enumerable: false });
@@ -70,7 +70,7 @@ export function serialize(s) {
 
 export function deserialize(json) {
   const s = JSON.parse(json);
-  if (!s || s.v !== SAVE_VERSION) return null;
+  if (!s || (s.v !== SAVE_VERSION && s.v !== 1)) return null;
   return hydrate(s);
 }
 
@@ -98,27 +98,61 @@ export function isUnlocked(s, x, y) {
 }
 
 // ---------- Mahalle ----------
-// Görüntülenen mahallenin tanımı. Oyunda tek durum olduğu için modül düzeyinde tutulur.
-let H = HOODS.eski;
-let terrainMap = new Map();
+// Mahalleler tek haritanın bölgeleri. Parsel -> mahalle, kare -> arazi ve cadde tabloları bir kez kurulur.
+const PARCELS_PER_SIDE = CONFIG.gridSize / CONFIG.parcelSize;
+const parcelHood = new Map();
+for (const [id, hd] of Object.entries(HOODS)) {
+  const [px0, py0, px1, py1] = hd.area;
+  for (let py = py0; py <= py1; py++) for (let px = px0; px <= px1; px++) parcelHood.set(`${px},${py}`, id);
+}
+const terrainMap = new Map(WORLD_TERRAIN.map(([x, y, type]) => [`${x},${y}`, type]));
+const avenueSet = new Set();
+for (const a of AVENUES) for (let y = a.y0; y <= a.y1; y++) avenueSet.add(`${a.x},${y}`);
+export const AVENUE_TILES = avenueSet.size;
 
-function setActiveHood(id) {
-  H = HOODS[id];
-  terrainMap = new Map(H.terrain.map(([x, y, type]) => [`${x},${y}`, type]));
+// Karenin (ya da parselin) mahallesi
+export function hoodAt(x, y) {
+  if (!inBounds(x, y)) return null;
+  const [px, py] = parcelOf(x, y);
+  return parcelHood.get(`${px},${py}`) || null;
+}
+export function hoodOfParcel(px, py) {
+  return parcelHood.get(`${px},${py}`) || null;
+}
+export function hoodOf(b) {
+  return hoodAt(b.x, b.y) || 'eski';
+}
+function hoodDef(x, y) {
+  return HOODS[hoodAt(x, y)] || HOODS.eski;
 }
 
-export function activeHood() {
-  return H;
+// Ekranın ortasındaki mahalle (fiyat ve endeks gösterimi bunu kullanır)
+export function activeHood(s) {
+  return HOODS[s?.hood] || HOODS.eski;
+}
+export function setViewHood(s, id) {
+  if (HOODS[id]) s.hood = id;
+}
+// Mahallenin harita üstündeki ortası (kamera için)
+export function hoodCenter(id) {
+  const [px0, py0, px1, py1] = HOODS[id].area;
+  const p = CONFIG.parcelSize;
+  const [sx, sy] = HOODS[id].start;
+  // başlangıç parseline yakın, bölgenin ortasına doğru
+  return [((sx + 0.5) * p * 2 + (px0 + px1 + 1) / 2 * p) / 3, ((sy + 0.5) * p * 2 + (py0 + py1 + 1) / 2 * p) / 3];
 }
 
 // Karedeki arazi türü (nehir, tepe, deniz ...) ya da null
 export function terrainAt(x, y) {
   if (!inBounds(x, y)) return null;
-  return terrainMap.get(`${x},${y}`) || (H.allTerrain && !isAvenue(x, y) ? H.allTerrain : null);
+  const t = terrainMap.get(`${x},${y}`);
+  if (t) return t;
+  const all = hoodDef(x, y).allTerrain;
+  return all && !isAvenue(x, y) ? all : null;
 }
 
 export function isAvenue(x, y) {
-  return x === H.avenue.x && y >= H.avenue.y0 && y <= H.avenue.y1 && inBounds(x, y);
+  return avenueSet.has(`${x},${y}`);
 }
 
 export function hoodUnlocked(s, id) {
@@ -134,30 +168,48 @@ export function openHood(s, id) {
   s.money -= hd.openCost;
   s.hoodsOpen.push(id);
   ensureMarket(s, id);
-  s.hoods[id] = { buildings: {}, parcels: CONFIG.startParcels.map(([px, py]) => `${px},${py}`), parcelsPaid: hd.openCost, leftAt: s.gameTime };
+  const key = `${hd.start[0]},${hd.start[1]}`;
+  if (!s.parcels.includes(key)) s.parcels.push(key);
+  s.parcelsPaid[id] = (s.parcelsPaid[id] || 0) + hd.openCost;
+  changed(s);
   addXp(s, Math.round(hd.openCost / 200));
   emit(s, 'hoodOpened', { id });
   return ok();
 }
 
-// Başka mahalleye geç: görüntülenenin verisi saklanır, hedefinki yüklenir.
-export function switchHood(s, id) {
-  if (!hoodUnlocked(s, id)) return fail('Bu mahalle henüz açılmadı.');
-  if (id === s.hood) return ok();
-  s.hoods[s.hood] = { buildings: s.buildings, parcels: s.parcels, parcelsPaid: s.parcelsPaid, leftAt: s.gameTime };
-  const target = s.hoods[id];
-  delete s.hoods[id];
-  s.buildings = target.buildings;
-  s.parcels = target.parcels;
-  s.parcelsPaid = target.parcelsPaid;
-  s.hood = id;
-  setActiveHood(id);
-  changed(s);
-  // yokken biriken ticari gelir (bağlantı o sürede değişmedi)
-  const away = s.gameTime - (target.leftAt ?? s.gameTime);
-  accrueIncome(s, away);
-  produce(s, away);
-  return ok();
+// Eski kayıt (her mahallenin ayrı 12x12 haritası) -> tek harita. Her mahalle kendi bölgesine
+// taşınır; caddeler eski yerlerine denk gelir. Yine de sığmayan bina olursa parası iade edilir.
+function migrateToWorld(s) {
+  const old = [[s.hood, { buildings: s.buildings, parcels: s.parcels, parcelsPaid: s.parcelsPaid }], ...Object.entries(s.hoods || {})];
+  s.buildings = {};
+  s.parcels = [];
+  s.parcelsPaid = {};
+  s.v = SAVE_VERSION;
+  let refund = 0;
+  const placed = [];
+  for (const [id, hd] of old) {
+    const def0 = HOODS[id];
+    if (!def0) continue;
+    const [ox, oy] = def0.origin;
+    const p = CONFIG.parcelSize;
+    for (const key of hd.parcels || []) {
+      const [px, py] = key.split(',').map(Number);
+      const nk = `${px + ox / p},${py + oy / p}`;
+      if (!s.parcels.includes(nk)) s.parcels.push(nk);
+    }
+    s.parcelsPaid[id] = (s.parcelsPaid[id] || 0) + (hd.parcelsPaid || 0);
+    for (const b of Object.values(hd.buildings || {})) placed.push({ ...b, x: b.x + ox, y: b.y + oy });
+  }
+  Object.defineProperty(s, '_cache', { value: { version: -1 }, writable: true, enumerable: false, configurable: true });
+  Object.defineProperty(s, 'version', { value: 0, writable: true, enumerable: false, configurable: true });
+  for (const b of placed) {
+    if (canPlace(s, b.x, b.y, null, sizeOf(b), b.type).ok) { s.buildings[b.id] = b; s.version++; }
+    else refund += b.paid || 0;
+  }
+  s.money += refund;
+  delete s.hoods;
+  if (s.visitor) s.visitor = null;
+  s.migratedRefund = refund;
 }
 
 function cache(s) {
@@ -195,9 +247,11 @@ function computeConnected(grid) {
   const n = CONFIG.gridSize;
   const roadOk = Array.from({ length: n }, () => new Array(n).fill(false));
   const queue = [];
-  for (let y = H.avenue.y0; y <= H.avenue.y1; y++) {
-    roadOk[y][H.avenue.x] = true;
-    queue.push([H.avenue.x, y]);
+  for (const a of AVENUES) {
+    for (let y = a.y0; y <= a.y1; y++) {
+      roadOk[y][a.x] = true;
+      queue.push([a.x, y]);
+    }
   }
   const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   while (queue.length) {
@@ -278,6 +332,8 @@ export function bonusAt(s, x, y, tenant = null, opts = {}) {
   if (extra) sources.push(extra);
   const perType = {};
   const boost = SEASONS[SEASON].effectBoost || {};
+  const hoodId = hoodAt(x, y);
+  const H = HOODS[hoodId] || HOODS.eski;
   for (const b of sources) {
     const e = def(b.type).effect;
     if (!e || covers(b, x, y)) continue;
@@ -300,9 +356,9 @@ export function bonusAt(s, x, y, tenant = null, opts = {}) {
   if (hd?.resist) soften *= 0.5;
   if (soften < 1) for (const k of Object.keys(perType)) if (perType[k] < 0) perType[k] = Math.round(perType[k] * soften);
   // mahalleye uygun ev (konak Eski Çarşı'da ...) ve mevsim
-  const hb = hd?.cat === 'konut' ? hd.hoodBonus?.[s.hood] : 0;
+  const hb = hd?.cat === 'konut' ? hd.hoodBonus?.[hoodId] : 0;
   if (hb) perType.mahalle = hb;
-  const sb = hd?.cat === 'konut' || !hd ? SEASONS[SEASON].rentHood?.[s.hood] : 0;
+  const sb = hd?.cat === 'konut' || !hd ? SEASONS[SEASON].rentHood?.[hoodId] : 0;
   if (sb) perType.mevsim = sb;
   // İş Merkezi: yüksek binalar yanındaki evin manzarasını kapatır
   if (H.rule === 'golge' && sources.some(b => TALL.includes(b.type) && !covers(b, x, y) && inRadius(b, x, y, 1))) {
@@ -380,7 +436,7 @@ function makeDemand(s, tenantId, rng) {
 }
 
 export function generateCards(s, house, rng = Math.random) {
-  const ids = availableTenants(s, house.type);
+  const ids = availableTenants(s, house.type, hoodOf(house));
   // farklı kiracı tipleri karışık sırada
   const pool = ids.slice().sort(() => rng() - 0.5);
   const cards = [];
@@ -397,10 +453,11 @@ export function generateCards(s, house, rng = Math.random) {
 }
 
 // Bu ev türüne bu seviyede gelebilecek kiracılar
-export function availableTenants(s, houseType) {
+export function availableTenants(s, houseType, hoodId = s.hood) {
+  const H = HOODS[hoodId] || HOODS.eski;
   return Object.entries(TENANTS)
     .filter(([, t]) => (t.unlock || 1) <= s.level && (!t.houses || t.houses.includes(houseType) || H.rule === 'tepe')
-      && (!t.hoods || t.hoods.includes(s.hood)))
+      && (!t.hoods || t.hoods.includes(hoodId)))
     .map(([id]) => id);
 }
 
@@ -675,7 +732,7 @@ export function storageCap(b) {
 }
 
 export function incomeOf(b) {
-  return typeof b === 'string' ? incomePerHour(b) : Math.round(incomePerHour(b.type) * levelMult(b));
+  return typeof b === 'string' ? incomePerHour(b) : Math.round(incomePerHour(b.type, hoodOf(b)) * levelMult(b));
 }
 
 export function hasIncome(b) {
@@ -744,7 +801,7 @@ export function advance(s, realMs, rng = Math.random) {
   visitorTick(s, rng);
 }
 
-// Görüntülenen mahallede ticari gelir biriktir (diğer mahalleler geçişte hesaplanır)
+// Ticari gelir biriktir
 function accrueIncome(s, dt) {
   if (dt <= 0) return;
   for (const b of Object.values(s.buildings)) {
@@ -756,8 +813,9 @@ function accrueIncome(s, dt) {
 }
 
 // Sanayi Bölgesi'nde sanayi geliri artar
-export function incomePerHour(type) {
+export function incomePerHour(type, hoodId = 'eski') {
   const d = def(type);
+  const H = HOODS[hoodId] || HOODS.eski;
   const bonus = d.cat === 'sanayi' && H.industryBonus ? H.industryBonus : 0;
   const season = SEASONS[SEASON].income?.[type] || 1;
   return Math.round((d.incomePerHour || 0) * (1 + bonus) * season);
@@ -787,10 +845,11 @@ export function countOf(s, type) {
   return Object.values(s.buildings).filter(b => b.type === type).length;
 }
 
-export function buildCost(s, type) {
+// hoodId: binanın kurulacağı mahalle (fiyat o mahallenin endeksine göre)
+export function buildCost(s, type, hoodId = s.hood) {
   const d = def(type);
   if (!d.cost) return 0;
-  return Math.round(d.cost * Math.pow(CONFIG.buildCostGrowth, countOf(s, type)) * marketIndex(s) / 100);
+  return Math.round(d.cost * Math.pow(CONFIG.buildCostGrowth, countOf(s, type)) * marketIndex(s, hoodId) / 100);
 }
 
 export function canPlace(s, x, y, ignoreId = null, size = 1, type = null) {
@@ -823,7 +882,8 @@ export function build(s, type, x, y, rng = Math.random) {
   if (d.rare && !s.rareUnlocked.includes(type)) return fail('Bu nadir süsleme bir kiracı hikayesiyle açılır.');
   const p = canPlace(s, x, y, null, sizeOf(type), type);
   if (!p.ok) return p;
-  const cost = buildCost(s, type);
+  const hoodId = hoodAt(x, y);
+  const cost = buildCost(s, type, hoodId);
   if (s.money < cost) return fail('Yeterli para yok.');
   if (d.diamondCost && s.diamonds < d.diamondCost) return fail(`${d.diamondCost} elmas gerekli.`);
   const mats = MATS[type] || {};
@@ -835,7 +895,7 @@ export function build(s, type, x, y, rng = Math.random) {
   const id = `b${s.nextId++}`;
   const vars = VARIANTS[type];
   const variant = vars ? vars[Math.floor(rng() * vars.length) % vars.length] : null;
-  s.buildings[id] = { id, type, x, y, paid: cost + matsValue(mats), paidIndex: marketIndex(s), level: 1, variant,
+  s.buildings[id] = { id, type, x, y, paid: cost + matsValue(mats), paidIndex: marketIndex(s, hoodId), level: 1, variant,
     contract: null, renewal: null, cards: null, stored: 0 };
   changed(s);
   if (cost > 0) addXp(s, Math.max(1, Math.round(cost / 25)));
@@ -870,25 +930,34 @@ export function sell(s, id) {
 
 // ---------- Arsa ----------
 
-export function parcelCost(s) {
-  return Math.round(H.parcelBaseCost * Math.pow(CONFIG.parcelGrowth, s.parcels.length - CONFIG.startParcels.length) * marketIndex(s) / 100);
+// Parselin fiyatı: kendi mahallesinin taban fiyatı, o mahallede açılan her parselle artar
+export function parcelCost(s, px, py) {
+  const id = hoodOfParcel(px, py) || 'eski';
+  const hd = HOODS[id];
+  const owned = s.parcels.filter(k => parcelHood.get(k) === id).length;
+  return Math.round(hd.parcelBaseCost * Math.pow(CONFIG.parcelGrowth, Math.max(0, owned - 1)) * marketIndex(s, id) / 100);
 }
 
-// Bu mahallede açılabilir mi (Tepe Villaları'nda arsa az)
-export function parcelBuyable(px, py) {
-  return !H.buyable || H.buyable.includes(`${px},${py}`);
+// Açılabilir mi: mahallesi açık olmalı (Tepe Villaları'nda arsa az)
+export function parcelBuyable(s, px, py) {
+  const id = hoodOfParcel(px, py);
+  if (!id || !hoodUnlocked(s, id)) return false;
+  const hd = HOODS[id];
+  return !hd.buyable || hd.buyable.includes(`${px},${py}`);
 }
 
 export function buyParcel(s, px, py) {
   const key = `${px},${py}`;
-  const max = CONFIG.gridSize / CONFIG.parcelSize;
+  const max = PARCELS_PER_SIDE;
   if (px < 0 || py < 0 || px >= max || py >= max) return fail('Geçersiz parsel.');
   if (s.parcels.includes(key)) return fail('Bu parsel zaten açık.');
-  if (!parcelBuyable(px, py)) return fail('Bu mahallede bu arsa satılık değil.');
-  const cost = parcelCost(s);
+  const id = hoodOfParcel(px, py);
+  if (!hoodUnlocked(s, id)) return fail(`Önce ${HOODS[id].name} mahallesini aç.`);
+  if (!parcelBuyable(s, px, py)) return fail('Bu mahallede bu arsa satılık değil.');
+  const cost = parcelCost(s, px, py);
   if (s.money < cost) return fail('Yeterli para yok.');
   s.money -= cost;
-  s.parcelsPaid += cost;
+  s.parcelsPaid[id] = (s.parcelsPaid[id] || 0) + cost;
   s.parcels.push(key);
   changed(s);
   addXp(s, Math.round(cost / 30));
@@ -922,9 +991,11 @@ export function isProducer(b) {
   return !!def(b.type).produce;
 }
 
-// Döngü süresi (oyun ms); Sanayi Bölgesi'nde %25 hızlı
-export function cycleMs(type) {
+// Döngü süresi (oyun ms); Sanayi Bölgesi'nde %25 hızlı. b: bina ya da tür
+export function cycleMs(b) {
+  const type = typeof b === 'string' ? b : b.type;
   const p = def(type).produce;
+  const H = typeof b === 'string' ? HOODS.eski : HOODS[hoodOf(b)];
   return p.minutes * MIN / (1 + (H.industryBonus || 0));
 }
 
@@ -937,7 +1008,7 @@ function produce(s, dt) {
   for (const b of list) {
     if (!isConnected(s, b)) { b.pstate = 'baglantisiz'; continue; }
     const p = def(b.type).produce;
-    const cyc = cycleMs(b.type);
+    const cyc = cycleMs(b);
     b.prog = (b.prog || 0) + dt;
     let guard = 0;
     while (b.prog >= cyc && guard++ < 2000) {
@@ -1094,7 +1165,7 @@ export function nextUpgrade(b) {
 export function upgradeCost(s, b) {
   const u = nextUpgrade(b);
   if (!u) return 0;
-  return Math.round(def(b.type).cost * u.costFactor * marketIndex(s) / 100);
+  return Math.round(def(b.type).cost * u.costFactor * marketIndex(s, hoodOf(b)) / 100);
 }
 
 export function upgrade(s, id) {
@@ -1158,7 +1229,7 @@ export function achievementProgress(s, a) {
 
 // Bütün mahallelerdeki binalar
 export function allBuildings(s) {
-  return [...Object.values(s.buildings), ...Object.values(s.hoods || {}).flatMap(h => Object.values(h.buildings))];
+  return Object.values(s.buildings);
 }
 
 // ---------- Emlak piyasası ----------
@@ -1179,7 +1250,7 @@ export function marketIndex(s, id = s.hood) {
 }
 
 // Binanın piyasa değeri: ödenen × (şimdiki endeks / alındığı andaki endeks)
-export function marketValue(s, b, idx = marketIndex(s)) {
+export function marketValue(s, b, idx = marketIndex(s, hoodOf(b))) {
   return (b.paid || 0) * idx / (b.paidIndex || 100);
 }
 
@@ -1188,9 +1259,9 @@ export function sellValue(s, b, idx) {
 }
 
 // Görüntülenen mahallenin endeks hedefi ve bileşenleri
-export function marketBreakdown(s) {
+export function marketBreakdown(s, id = s.hood) {
   const M = CONFIG.market;
-  const houses = Object.values(s.buildings).filter(isHouse);
+  const houses = Object.values(s.buildings).filter(b => isHouse(b) && hoodOf(b) === id);
   const parts = { happy: 0, vacant: 0, placement: 0, artists: 0 };
   if (houses.length) {
     const happy = houses.filter(h => h.contract && satisfaction(s, h) >= CONFIG.satHappy).length;
@@ -1221,8 +1292,7 @@ export function marketTarget(s, id = s.hood) {
 function marketTick(s, dt, rng) {
   if (!s.market) return;
   const M = CONFIG.market;
-  const cur = s.market.hoods[s.hood];
-  if (cur) cur.base = marketBreakdown(s).base;
+  for (const id of s.hoodsOpen) if (s.market.hoods[id]) s.market.hoods[id].base = marketBreakdown(s, id).base;
   // endeks hedefe yavaşça yaklaşır
   const k = 1 - Math.exp(-M.driftPerHour * dt / HOUR);
   for (const id of s.hoodsOpen) {
@@ -1280,12 +1350,8 @@ export function addXp(s, amount) {
 export function netWorth(s) {
   let v = s.money;
   for (const [k, r] of Object.entries(RESOURCES)) v += (s.inv?.[k] || 0) * r.price;
-  const all = [[s.hood, { buildings: s.buildings, parcelsPaid: s.parcelsPaid }], ...Object.entries(s.hoods || {})];
-  for (const [id, hd] of all) {
-    const idx = marketIndex(s, id);
-    v += (hd.parcelsPaid || 0) * idx / 100;
-    for (const b of Object.values(hd.buildings)) v += sellValue(s, b, idx);
-  }
+  for (const [id, paid] of Object.entries(s.parcelsPaid || {})) v += paid * marketIndex(s, id) / 100;
+  for (const b of Object.values(s.buildings)) v += sellValue(s, b);
   return Math.round(v);
 }
 
@@ -1423,7 +1489,7 @@ export function setSeasonOverride(s, id) {
 
 function visitorTick(s, rng) {
   const v = s.visitor;
-  if (v && (s.gameTime > v.until || (v.hood === s.hood && !s.buildings[v.id]))) {
+  if (v && (s.gameTime > v.until || !s.buildings[v.id])) {
     s.visitor = null;
     s.nextVisitorAt = s.gameTime + CONFIG.visitorEveryHours * HOUR;
     emit(s, 'visitorLeft', { visitor: v.type });
@@ -1437,14 +1503,14 @@ function visitorTick(s, rng) {
   const types = Object.keys(VISITORS);
   const type = types[Math.floor(rng() * types.length) % types.length];
   const b = spots[Math.floor(rng() * spots.length) % spots.length];
-  s.visitor = { type, id: b.id, hood: s.hood, n: VISITORS[type].n(s.level), until: s.gameTime + CONFIG.visitorStayHours * HOUR };
+  s.visitor = { type, id: b.id, hood: hoodOf(b), n: VISITORS[type].n(s.level), until: s.gameTime + CONFIG.visitorStayHours * HOUR };
   emit(s, 'visitor', { visitor: type, x: b.x, y: b.y });
 }
 
-// Görüntülenen mahalledeki ziyaretçi ve durduğu bina
+// Ziyaretçi ve durduğu bina
 export function visitorHere(s) {
   const v = s.visitor;
-  if (!v || v.hood !== s.hood || !s.buildings[v.id]) return null;
+  if (!v || !s.buildings[v.id]) return null;
   return { ...v, def: VISITORS[v.type], building: s.buildings[v.id] };
 }
 
@@ -1475,7 +1541,7 @@ export function greetVisitor(s) {
   s.money += rw.money || 0;
   s.diamonds += rw.diamonds || 0;
   if (rw.xp) addXp(s, rw.xp);
-  if (rw.market) startRandomEvent(s, Math.random, s.hood, 'haber');
+  if (rw.market) startRandomEvent(s, Math.random, v.hood || s.hood, 'haber');
   s.stats.visitorsHappy++;
   s.visitor = null;
   s.nextVisitorAt = s.gameTime + CONFIG.visitorEveryHours * HOUR;

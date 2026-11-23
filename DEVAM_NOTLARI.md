@@ -231,3 +231,14 @@ Görseller (Claude, ~50 kredi): kaynaklar `img/kaynak/`, doğa ve mevsim ağaçl
 - Testler: 47 (6 yeni).
 
 **Sıradaki fikirler:** mahalle festivalleri (kısa süreli ödüllü olaylar), yeni konutların yükseltme seviyeleri, bina görsellerinin WebP'ye çevrilmesi (APK boyutu).
+
+## 2026-11-23 — Tek büyük harita (0.4.0)
+- **Ağaçlar küçüldü:** evlerin yarısı boyunda (`TREE_SCALE` 0.5, `js/render.js`). Kilitli arsalarda ağaç yok, yalnız çalı ve çiçek: arsa görünür, dokunması kolay. Harita dışında ağaç sıklığı arttı.
+- **Mahalleler artık ayrı harita değil, tek 36×36 haritanın bölgeleri** (`HOODS[id].area` parsel aralığı, `start` ilk parsel). Yerleşim: Tepe kuzeybatı, İş Merkezi kuzey, Sanayi doğu (6 parsel boyu), Eski Çarşı orta (6×3 parsel), Sahil bütün güney şeridi. Üç ana cadde (x=5, 17, 29) kuzeyden kumsala; nehir y=22'de haritayı keser (caddeler köprüyle geçer); y=32-33 kum, 34 kıyı, 35 deniz (`AVENUES`, `WORLD_TERRAIN`).
+- Mahalle kuralları kareye göre işler (`hoodAt(x, y)`): kirlilik, gölge, tepe kiracısı, mahalle konut bonusu, sanayi geliri/üretim hızı, bina ve arsa fiyatı (o mahallenin endeksi), satış değeri. Her mahallenin endeksi kendi evlerine göre hesaplanır. Bütün binalar aynı anda gelir üretir (mahalle geçişi yok).
+- Mahalle açmak ilk parselini verir. Arsa fiyatı her mahallede ayrı artar; kapalı mahallenin parseli alınamaz. Kapalı mahalle haritada koyu ve ortasında ad + seviye/fiyat etiketiyle görünür; dokununca Mahalleler penceresi açılır. Fiyat etiketi yalnız açık arsaya komşu parsellerde.
+- Mahalleler penceresinde "Gör" kamerayı o mahalleye götürür. Üst göstergedeki mahalle adı ekranın ortasındaki mahalle (`s.hood` artık yalnız bu; inşa menüsündeki fiyat da buna göre).
+- **Eski kayıt taşıma** (`migrateToWorld`, kayıt sürümü 1 → 2): her mahallenin 12×12 haritası `HOODS[id].origin` noktasına konur. Caddeler eski yerlerine denk geldiği için binalar bağlı kalır; yine de yerleşemeyen olursa parası iade edilir ve oyuncuya bildirilir.
+- Çizim: yalnız ekrandaki kareler çizilir. Telefon boyutunda kaydırırken 53-60 kare/sn.
+- Testler: 49. Eski testler `local(id)` sarmalayıcısıyla mahallenin kendi koordinatlarında çalışır.
+- Sürüm 0.4.0 (sürüm kodu 6).

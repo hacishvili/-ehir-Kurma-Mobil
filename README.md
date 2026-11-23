@@ -10,7 +10,7 @@ Yol haritasının 1. adımı. Soru: **çekirdek döngü eğlenceli mi?**
 
 Prototipte olanlar:
 
-- Tek mahalle (Eski Çarşı), 12×12 harita, 9 arsa parseli (1'i açık, gerisi satın alınır)
+- Tek büyük şehir haritası (36×36 kare, 81 arsa parseli). Beş mahalle bu haritanın bölgeleri: Eski Çarşı (başlangıç, ortada), Sahil (güney, deniz), Sanayi (doğu), İş Merkezi (kuzey), Tepe Villaları (kuzeybatı)
 - 4 bina kategorisi: konut, ticari, kamu ve yeşil alan, sanayi (toplam 10 bina)
 - 4 kiracı tipi: öğrenci, genç çalışan, aile, emekli
 - **Etki alanı:** park, kafe, okul gibi binalar çevresine kira bonusu, atölye ve gece kulübü bazı kiracılara ceza verir. Aynı türden etki en fazla ±%30'a kadar birikir.

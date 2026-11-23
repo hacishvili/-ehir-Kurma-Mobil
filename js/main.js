@@ -61,16 +61,21 @@ function save() {
 
 // ---------- Başlangıç ----------
 
-// Açılışta haritanın tamamı ekrana sığar (uzaklaşma sınırı da bu)
+// Açılışta bir mahallenin çoğu ekrana sığar (yaklaşık 14 kare genişlik)
 function startZoom() {
-  return R.fitZoom();
+  return G.clamp(R.size.W / (14 * 64), R.fitZoom(), 2);
+}
+
+function centerHood(id, z) {
+  const [hx, hy] = G.hoodCenter(id);
+  R.centerOn(hx, hy, z);
 }
 
 function start(hotData = {}) {
   const loaded = loadSave(hotData);
   s = loaded || G.createState();
   R.resize();
-  R.centerOn(6, 6, startZoom());
+  centerHood(s.hood || 'eski', startZoom());
 
   if (loaded) {
     const before = s.gameTime;
@@ -81,6 +86,11 @@ function start(hotData = {}) {
     showWelcome();
   }
   s.events.length = 0;
+  if (s.migratedRefund !== undefined) {
+    // tek haritaya geçiş: eski kayıt taşındı
+    setTimeout(() => toast(`Şehrin artık tek büyük harita! Mahalleler yan yana.${s.migratedRefund ? ` Sığmayan binaların parası iade edildi: ${G.formatMoney(s.migratedRefund)} 🪙` : ''}`), 1200);
+    delete s.migratedRefund;
+  }
   lastWall = Date.now();
   bindUi();
   loadPrefs();
@@ -137,7 +147,7 @@ function drainEvents(t) {
       const where = e.hood === s.hood ? '' : `${HOODS[e.hood].name}: `;
       toast(`📰 ${where}${e.text} (${e.effect > 0 ? '+' : ''}${e.effect} endeks)`, e.effect < 0);
     } else if (e.type === 'hoodOpened') {
-      toast(`${HOODS[e.id].name} açıldı! Mahalle menüsünden geçebilirsin.`);
+      toast(`${HOODS[e.id].name} açıldı! İlk arsası hazır.`);
     } else if (e.type === 'collectionDrop') {
       const it = COLLECTION[e.item];
       view.floaters.push({ x: e.x, y: e.y, text: `+1 ${it.name}`, t0: t + 400, color: '#bde7ff' });
@@ -180,10 +190,14 @@ function setText(id, v) {
 }
 
 function updateHud() {
+  // ekranın ortasındaki mahalle: fiyatlar ve endeks bunu gösterir
+  const [cx, cy] = R.screenToTile(R.size.W / 2, R.size.H * 0.45);
+  const here = G.hoodAt(cx, cy);
+  if (here) G.setViewHood(s, here);
   setText('money', compact(s.money));
   setText('diamonds', String(s.diamonds));
-  setText('hoodName', G.activeHood().short || G.activeHood().name);
-  setText('hoodIcon', G.activeHood().icon);
+  setText('hoodName', G.activeHood(s).short || G.activeHood(s).name);
+  setText('hoodIcon', G.activeHood(s).icon);
   setText('level', String(s.level));
   setText('worth', compact(G.netWorth(s)));
   const pct = Math.min(100, (s.xp / G.xpToNext(s.level)) * 100);
@@ -413,7 +427,7 @@ function findSpot(type) {
   let best = null, bestScore = Infinity;
   const n = CONFIG.gridSize;
   const size = G.sizeOf(type);
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+  for (let y = Math.max(0, cy - 12); y < Math.min(n, cy + 13); y++) for (let x = Math.max(0, cx - 12); x < Math.min(n, cx + 13); x++) {
     if (!G.canPlace(s, x, y, null, size).ok) continue;
     const roadNext = connectedAt(x, y, size);
     const score = Math.hypot(x - cx, y - cy) + (roadNext ? 0 : 6);
@@ -439,7 +453,7 @@ function connectedAt(x, y, size = 1) {
 function updatePlacebar() {
   const pl = view.placement;
   const d = BUILDINGS[pl.type];
-  const cost = pl.moveId ? 0 : G.buildCost(s, pl.type);
+  const cost = pl.moveId ? 0 : G.buildCost(s, pl.type, G.hoodAt(pl.x, pl.y) || s.hood);
   const lines = [];
   if (!pl.valid) lines.push(`<span style="color:var(--bad);font-weight:800">${pl.reason}</span>`);
   else if (!connectedAt(pl.x, pl.y, G.sizeOf(pl.type))) lines.push(`<span style="color:#a26b00;font-weight:700">⚠️ Burada yola bağlı olmaz. Sonra yanına yol yapabilirsin.</span>`);
@@ -764,7 +778,7 @@ function openBuilding(id, skipVisitor = false) {
         stored: G.formatMoney(Math.floor(b.stored || 0)),
         meter: `${Math.min(100, (b.stored || 0) / G.storageCap(b) * 100)}%`,
       } : {}),
-      ...(G.isProducer(b) ? { pmeter: `${Math.min(100, (b.prog || 0) / G.cycleMs(b.type) * 100)}%`, pstate: producerStateText(b) } : {}),
+      ...(G.isProducer(b) ? { pmeter: `${Math.min(100, (b.prog || 0) / G.cycleMs(b) * 100)}%`, pstate: producerStateText(b) } : {}),
     }),
     actions: {
       upgrade: () => doUpgrade(id),
@@ -896,7 +910,7 @@ function openBuild() {
   openSheet({
     sig: () => `${s.level}|${Math.floor(s.money / 25)}|${s.version}|${G.season()}`,
     render: () => {
-      let html = `<h2>İnşa et · ${G.activeHood().name}</h2><p class="sub">Fiyatlar mahalle endeksine göre: %${Math.round(G.marketIndex(s))}. Endeks düşükken inşa et, yükselince değerlensin.</p>`;
+      let html = `<h2>İnşa et · ${G.activeHood(s).name}</h2><p class="sub">Fiyatlar mahalle endeksine göre: %${Math.round(G.marketIndex(s))}. Endeks düşükken inşa et, yükselince değerlensin.</p>`;
       for (const [cat, info] of Object.entries(CATEGORIES)) {
         const items = Object.entries(BUILDINGS).filter(([, d]) => d.cat === cat);
         if (!items.length) continue;
@@ -946,12 +960,16 @@ function openBuild() {
 
 function openParcel(px, py) {
   view.selectedId = null;
+  const hoodId = G.hoodOfParcel(px, py);
+  if (!hoodId) return;
+  if (!G.hoodUnlocked(s, hoodId)) { openHoods(hoodId); return; }
+  if (!G.parcelBuyable(s, px, py)) { toast('Bu mahallede bu arsa satılık değil.', true); return; }
   openSheet({
     sig: () => `${Math.floor(s.money / 10)}|${s.parcels.length}`,
     render: () => {
-      const cost = G.parcelCost(s);
+      const cost = G.parcelCost(s, px, py);
       const p = CONFIG.parcelSize;
-      return `<h2>🔒 Kapalı arsa</h2><p class="sub">${p}×${p} kare yeni yer. Her parsel bir öncekinden pahalı.</p>
+      return `<h2>🔒 Kapalı arsa · ${HOODS[hoodId].name}</h2><p class="sub">${p}×${p} kare yeni yer. Bu mahallede her parsel bir öncekinden pahalı.</p>
         <div class="big-num">${G.formatMoney(cost)} 🪙</div>
         <button type="button" class="btn coin" data-act="buy" ${s.money < cost ? 'disabled' : ''}>Arsayı aç</button>`;
     },
@@ -1065,12 +1083,13 @@ function openSeason() {
 
 // ---------- Mahalleler ----------
 
-function openHoods() {
+// focus: kapalı bir mahalleye dokunulduysa onun adı (listede vurgulanır)
+function openHoods(focus = null) {
   view.selectedId = null;
   openSheet({
     sig: () => `${s.hood}|${s.hoodsOpen.join()}|${s.level}|${Math.floor(s.money / 1000)}|${s.hoodsOpen.map(id => Math.round(G.marketIndex(s, id))).join()}|${G.eventOf(s)?.id}`,
     render: () => {
-      let html = '<h2>Mahalleler</h2><p class="sub">Para, seviye ve elmas ortak; her mahallenin kendi arsası, binaları ve kuralı var.</p>';
+      let html = '<h2>Mahalleler</h2><p class="sub">Bütün mahalleler aynı haritada yan yana. Her birinin kendi kuralı, arsa fiyatı ve emlak endeksi var. Gör\'e basınca kamera oraya gider.</p>';
       html += marketCard();
       html += '<div class="hoods">';
       for (const [id, hd] of Object.entries(HOODS)) {
@@ -1078,11 +1097,11 @@ function openHoods() {
         const current = s.hood === id;
         let action;
         if (current) action = '<span class="chip good">Buradasın</span>';
-        else if (open) action = `<button type="button" class="btn primary small" data-act="go" data-id="${id}">Git</button>`;
-        else if (s.level < hd.unlock) action = `<span class="chip">🔒 Seviye ${hd.unlock}</span>`;
+        else if (open) action = `<button type="button" class="btn primary small" data-act="go" data-id="${id}">Gör</button>`;
+        else if (s.level < hd.unlock) action = `<span class="chip">🔒 Seviye ${hd.unlock}</span> <button type="button" class="btn small" data-act="go" data-id="${id}">Gör</button>`;
         else action = `<button type="button" class="btn coin small" data-act="open" data-id="${id}" ${s.money < hd.openCost ? 'disabled' : ''}>Aç · ${G.formatMoney(hd.openCost)}</button>`;
         const idxChip = open ? ` <span class="chip ${G.marketIndex(s, id) >= 100 ? 'good' : 'bad'}">%${Math.round(G.marketIndex(s, id))}</span>` : '';
-        html += `<div class="hood ${current ? 'current' : ''} ${open ? '' : 'locked'}">
+        html += `<div class="hood ${current || focus === id ? 'current' : ''} ${open ? '' : 'locked'}">
           <span class="hi">${hd.icon}</span><span class="hn">${hd.name}${idxChip}</span>${action}
           <span class="hh">${hd.hint}</span></div>`;
       }
@@ -1109,7 +1128,7 @@ function marketCard() {
   const trend = target > idx + 0.5 ? '▲ yükseliyor' : target < idx - 0.5 ? '▼ düşüyor' : '• sabit';
   const row = (label, v) => `<dt>${label}</dt><dd style="color:${v > 0 ? 'var(--good)' : v < 0 ? 'var(--bad)' : 'inherit'}">${v > 0 ? '+' : ''}${Math.round(v)}</dd>`;
   return `<div class="market">
-    <div class="row"><div class="grow"><div class="sub" style="margin:0">${G.activeHood().name} · emlak endeksi</div>
+    <div class="row"><div class="grow"><div class="sub" style="margin:0">${G.activeHood(s).name} · emlak endeksi</div>
       <div class="big-num" style="color:var(--text)">%${Math.round(idx)}</div></div>
       <span class="chip ${target >= idx ? 'good' : 'bad'}">${trend} → %${Math.round(target)}</span></div>
     <svg viewBox="0 0 ${W} ${Hh}" preserveAspectRatio="none" class="spark" aria-label="Endeks geçmişi">
@@ -1121,14 +1140,13 @@ function marketCard() {
   </div>`;
 }
 
+// Kamerayı mahalleye götür (hepsi aynı haritada)
 function goHood(id) {
-  if (!result(G.switchHood(s, id))) return;
-  AMB.reset();
   closeSheet();
   view.selectedId = null;
-  R.centerOn(6, 6, startZoom());
-  toast(`${G.activeHood().name} ${G.activeHood().icon}`);
-  save();
+  centerHood(id, Math.max(R.cam.z, startZoom()));
+  G.setViewHood(s, id);
+  toast(`${HOODS[id].name} ${HOODS[id].icon}`);
 }
 
 // ---------- Menü ----------
@@ -1183,7 +1201,7 @@ function openMenu() {
         s = G.createState();
         save();
         closeSheet();
-        R.centerOn(6, 6, startZoom());
+        centerHood('eski', startZoom());
         showWelcome();
       },
     },

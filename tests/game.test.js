@@ -1,9 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as G from '../js/game.js';
-import { CONFIG, BUILDINGS } from '../js/data.js';
+import * as G0 from '../js/game.js';
+import { CONFIG, BUILDINGS, HOODS } from '../js/data.js';
 
-const AX = CONFIG.avenueX; // ana cadde sütunu (başlangıç parseli 4..7 içinde)
+// Testler bir mahallenin kendi 12x12 alanındaki koordinatlarla yazıldı (eski ayrı haritalar).
+// local(id): kare ve parsel koordinatlarını o mahallenin büyük haritadaki yerine kaydıran sarmalayıcı.
+function local(id) {
+  const [ox, oy] = HOODS[id].origin;
+  const px0 = ox / CONFIG.parcelSize, py0 = oy / CONFIG.parcelSize;
+  const xy = (i, j) => (...a) => { a[i] += ox; a[j] += oy; return a; };
+  const shift = {
+    build: xy(2, 3), move: xy(2, 3), bonusAt: xy(1, 2), buildingAt: xy(1, 2), canPlace: xy(1, 2),
+    affectedByType: xy(1, 2), isRoadConnected: xy(1, 2), terrainAt: xy(0, 1), isAvenue: xy(0, 1),
+    nearTerrain: xy(0, 1), inRadius: xy(1, 2),
+    buyParcel: (s, px, py) => [s, px + px0, py + py0],
+    parcelCost: (s, px = 1, py = 2) => [s, px + px0, py + py0],
+  };
+  return new Proxy(G0, { get: (t, k) => (shift[k] ? (...a) => t[k](...shift[k](...a)) : t[k]) });
+}
+const G = local('eski');
+const AX = 5; // ana caddenin mahalle içindeki sütunu (büyük haritada x=17)
 
 function rich() {
   const s = G.createState();
@@ -272,36 +288,48 @@ test('eski kayıt yeni alanlarla açılır', () => {
   assert.equal(t.collection.tapu, 0);
 });
 
-test('mahalle: seviye ve para ister, açılınca geçilir, binalar mahallede kalır', () => {
+test('tek harita: mahalle seviye ve para ister, açılınca ilk arsası gelir, binalar yan yana durur', () => {
   const s = rich();
   s.level = 5;
-  assert.equal(G.openHood(s, 'sahil').ok, false, 'seviye 8 gerekli');
+  assert.equal(G0.openHood(s, 'sahil').ok, false, 'seviye 8 gerekli');
+  assert.equal(G0.buyParcel(s, 4, 7).ok, false, 'kapalı mahallede arsa alınamaz');
   s.level = 8;
   const evId = G.build(s, 'ev', AX + 1, 5).id;
-  assert.ok(G.openHood(s, 'sahil').ok);
-  const worthBefore = G.netWorth(s);
-  assert.ok(G.switchHood(s, 'sahil').ok);
-  assert.equal(Object.keys(s.buildings).length, 0, 'Sahil boş başlar');
-  assert.equal(G.netWorth(s), worthBefore, 'net değer bütün mahalleleri sayar');
-  G.build(s, 'ev', AX + 1, 5);
-  assert.ok(G.switchHood(s, 'eski').ok);
-  assert.ok(s.buildings[evId], 'Eski Çarşı binası yerinde');
-  assert.equal(Object.keys(s.buildings).length, 1);
+  const worthBefore = G0.netWorth(s);
+  assert.ok(G0.openHood(s, 'sahil').ok);
+  assert.ok(G0.isUnlocked(s, 17, 29), 'Sahilin ilk parseli açıldı');
+  assert.equal(G0.netWorth(s), worthBefore, 'açılış parası arsa değeri olarak sayılır');
+  const SA = local('sahil');
+  const y = SA.build(s, 'ev', AX + 1, 5);
+  assert.ok(y.ok, y.msg);
+  assert.ok(s.buildings[evId] && s.buildings[y.id], 'iki mahallenin binaları aynı haritada');
+  assert.equal(G0.hoodOf(s.buildings[y.id]), 'sahil');
+  assert.equal(G0.hoodOf(s.buildings[evId]), 'eski');
+});
+
+test('arsa fiyatı her mahallede ayrı artar', () => {
+  const s = rich();
+  s.level = 8;
+  G0.openHood(s, 'sahil');
+  const sahil1 = G0.parcelCost(s, 5, 7);
+  assert.ok(G.buyParcel(s, 1, 2).ok);
+  assert.equal(G0.parcelCost(s, 5, 7), sahil1, 'Eski Çarşıda arsa almak Sahil fiyatını değiştirmez');
+  assert.equal(sahil1, HOODS.sahil.parcelBaseCost);
 });
 
 test('Sahil: denize bina yapılamaz, deniz manzarası bonusu, cadde kumsalda biter', () => {
   const s = rich();
   s.level = 8;
-  G.openHood(s, 'sahil');
-  G.switchHood(s, 'sahil');
-  G.buyParcel(s, 1, 2);
-  assert.equal(G.build(s, 'ev', 6, 11).ok, false, 'deniz');
-  assert.equal(G.build(s, 'ev', 6, 10).ok, false, 'kıyı');
-  assert.ok(G.build(s, 'ev', 6, 9).ok, 'kum');
-  assert.equal(G.bonusAt(s, 6, 9).total, 15);
-  assert.equal(G.isAvenue(5, 10), false);
-  G.switchHood(s, 'eski');
-  assert.equal(G.isAvenue(5, 10), true, 'Eski Çarşı caddesi boydan boya');
+  G0.openHood(s, 'sahil');
+  const SA = local('sahil');
+  SA.buyParcel(s, 1, 2);
+  assert.equal(SA.build(s, 'ev', 6, 11).ok, false, 'deniz');
+  assert.equal(SA.build(s, 'ev', 6, 10).ok, false, 'kıyı');
+  assert.ok(SA.build(s, 'ev', 6, 9).ok, 'kum');
+  assert.equal(SA.bonusAt(s, 6, 9).total, 15);
+  assert.equal(SA.isAvenue(5, 10), false, 'cadde kıyıda biter');
+  assert.equal(G.isAvenue(5, 10), true, 'Eski Çarşıda nehrin üstünden köprüyle geçer');
+  assert.equal(G.isAvenue(5, 9), true);
 });
 
 test('Sanayi Bölgesi: kirlilik etkiyi genişletir, sanayi geliri artar', () => {
@@ -309,43 +337,64 @@ test('Sanayi Bölgesi: kirlilik etkiyi genişletir, sanayi geliri artar', () => 
   s.level = 20;
   G.build(s, 'atolye', 7, 4);
   assert.equal(G.bonusAt(s, 7, 7).total, 0, 'Eski Çarşıda 3 kare uzak etkilenmez');
-  G.openHood(s, 'sanayi');
-  G.switchHood(s, 'sanayi');
-  G.build(s, 'atolye', 7, 4);
-  assert.ok(G.bonusAt(s, 7, 7).total < 0, 'kirlilikle etkilenir');
-  assert.ok(G.incomePerHour('atolye') > 220);
+  G0.openHood(s, 'sanayi');
+  const SN = local('sanayi');
+  const id = SN.build(s, 'atolye', 7, 4).id;
+  assert.ok(SN.bonusAt(s, 7, 7).total < 0, 'kirlilikle etkilenir');
+  assert.ok(G0.incomeOf(s.buildings[id]) > 220);
+  assert.ok(G0.incomePerHour('atolye', 'sanayi') > G0.incomePerHour('atolye', 'eski'));
 });
 
 test('İş Merkezi: yüksek bina yanındaki eve gölge', () => {
   const s = rich();
   s.level = 30;
-  G.openHood(s, 'is');
-  G.switchHood(s, 'is');
-  G.build(s, 'gokdelen', 7, 4);
-  const near = G.bonusAt(s, 7, 5).parts.find(p => p.type === 'golge');
+  G0.openHood(s, 'is');
+  const IS = local('is');
+  IS.build(s, 'gokdelen', 7, 4);
+  const near = IS.bonusAt(s, 7, 5).parts.find(p => p.type === 'golge');
   assert.equal(near.value, -10);
 });
 
 test('Tepe Villaları: her kare tepe, ünlü her eve, arsa sınırlı', () => {
   const s = rich();
   s.level = 30;
-  G.openHood(s, 'tepe');
-  G.switchHood(s, 'tepe');
-  assert.equal(G.terrainAt(6, 6), 'tepe');
-  assert.ok(G.availableTenants(s, 'ev').includes('unlu'));
-  assert.equal(G.buyParcel(s, 0, 0).ok, false);
-  assert.ok(G.buyParcel(s, 2, 1).ok);
+  G0.openHood(s, 'tepe');
+  const TP = local('tepe');
+  assert.equal(TP.terrainAt(6, 6), 'tepe');
+  assert.ok(G0.availableTenants(s, 'ev', 'tepe').includes('unlu'));
+  assert.ok(!G0.availableTenants(s, 'ev', 'eski').includes('unlu'));
+  assert.equal(TP.buyParcel(s, 0, 0).ok, false);
+  assert.ok(TP.buyParcel(s, 2, 1).ok);
 });
 
-test('geri dönünce yokken biriken ticari gelir eklenir', () => {
+test('bütün mahallelerde gelir aynı anda birikir', () => {
   const s = rich();
   s.level = 10;
   const k = G.build(s, 'kafe', AX + 1, 5).id;
-  G.openHood(s, 'sahil');
-  G.switchHood(s, 'sahil');
-  G.advance(s, 2 * G.HOUR);
-  G.switchHood(s, 'eski');
+  G0.openHood(s, 'sahil');
+  const k2 = local('sahil').build(s, 'kafe', AX + 1, 5).id;
+  G0.advance(s, 2 * G0.HOUR);
   assert.ok(s.buildings[k].stored > 70);
+  assert.ok(s.buildings[k2].stored > 70);
+});
+
+test('eski kayıt (ayrı mahalle haritaları) tek haritaya taşınır', () => {
+  const old = {
+    v: 1, money: 1000, xp: 0, level: 10, gameTime: 0, speed: 1, savedAt: Date.now(), nextId: 4,
+    parcels: ['1,1', '1,2'], parcelsPaid: 2500, hood: 'sahil', hoodsOpen: ['eski', 'sahil'],
+    buildings: { b2: { id: 'b2', type: 'ev', x: 6, y: 9, paid: 300, paidIndex: 100, level: 1, contract: null, stored: 0 } },
+    hoods: { eski: { buildings: { b1: { id: 'b1', type: 'ev', x: 6, y: 4, paid: 250, paidIndex: 100, level: 1, contract: null, stored: 0 } },
+      parcels: ['1,1', '1,2'], parcelsPaid: 600, leftAt: 0 } },
+    stats: { contractsSigned: 0, rentsCollected: 0, moneyEarned: 0 }, questIndex: 0, questDone: false,
+  };
+  const s = G0.deserialize(JSON.stringify(old));
+  assert.equal(s.v, G0.SAVE_VERSION);
+  assert.equal(s.hoods, undefined);
+  assert.deepEqual([s.buildings.b1.x, s.buildings.b1.y], [18, 16], 'Eski Çarşı ortada');
+  assert.deepEqual([s.buildings.b2.x, s.buildings.b2.y], [18, 33], 'Sahil güneyde');
+  assert.ok(['4,4', '4,5', '4,7', '4,8'].every(k => s.parcels.includes(k)));
+  assert.equal(s.parcelsPaid.eski, 600);
+  assert.ok(G0.isConnected(s, s.buildings.b1) && G0.isConnected(s, s.buildings.b2), 'caddeler eski yerinde');
 });
 
 test('piyasa: memnun kiracılar endeksi yükseltir, boş evler düşürür', () => {

@@ -2,12 +2,10 @@
 // Rakamlar ilk tahmindir; oynayarak ayarlanacak.
 
 export const CONFIG = {
-  gridSize: 12,          // harita 12x12 kare
-  parcelSize: 4,         // her arsa parseli 4x4 kare (toplam 3x3 = 9 parsel)
-  avenueX: 5,            // bu sütun boydan boya ana cadde (silinemez, yollar buna bağlanır)
-  startParcels: [[1, 1]],
-  parcelBaseCost: 600,   // 2. parselin fiyatı
-  parcelGrowth: 1.6,     // her yeni parsel bir öncekinden bu kadar kat pahalı
+  gridSize: 36,          // tek büyük harita 36x36 kare; mahalleler bu haritanın bölgeleri
+  parcelSize: 4,         // her arsa parseli 4x4 kare (9x9 = 81 parsel)
+  startParcels: [[4, 4]],
+  parcelGrowth: 1.6,     // aynı mahallede her yeni parsel bir öncekinden bu kadar kat pahalı
 
   startMoney: 1500,
   buildCostGrowth: 1.25, // aynı türden her yeni bina bu kadar kat pahalı
@@ -582,9 +580,25 @@ export const TERRAIN = {
   kum: { name: 'Kumsal', sprite: 'zemin-kum', buildable: true },
 };
 
-const row = (y, type, skip = []) => [...Array(12).keys()].filter(x => !skip.includes(x)).map(x => [x, y, type]);
+// ---------- Şehir haritası ----------
+// Tek harita, 36x36 kare. Ana caddeler (x=5, 17, 29) kuzeyden kumsala kadar uzanır; silinemez,
+// yollar bunlara bağlanır. Nehir y=22'de haritayı keser, caddeler köprüyle geçer. En altta kum,
+// kıyı ve deniz.
+const AVENUE_XS = [5, 17, 29];
+export const AVENUES = AVENUE_XS.map(x => ({ x, y0: 0, y1: 33 }));
+const span = (y, type) => [...Array(36).keys()].filter(x => !AVENUE_XS.includes(x) || type === 'deniz' || type === 'kiyi').map(x => [x, y, type]);
+export const WORLD_TERRAIN = [
+  ...span(22, 'nehir'),
+  ...span(32, 'kum'), ...span(33, 'kum'), ...span(34, 'kiyi'), ...span(35, 'deniz'),
+  // Eski Çarşı tepecikleri
+  [21, 13, 'tepe'], [22, 13, 'tepe'], [22, 14, 'tepe'], [23, 14, 'tepe'],
+  [2, 15, 'tepe'], [3, 15, 'tepe'], [2, 16, 'tepe'],
+];
 
-// Mahalleler. Para, seviye ve elmas ortak; her mahallenin kendi haritası, binaları ve arsaları var.
+// Mahalleler: haritanın bölgeleri. Para, seviye, elmas ortak; her mahallenin kendi kuralı,
+// arsa fiyatı ve emlak endeksi var.
+// area: parsel aralığı [px0, py0, px1, py1]; start: açılınca verilen ilk parsel
+// origin: eski (ayrı haritalı) kayıtlarda bu mahallenin 12x12 haritasının yeni haritadaki yeri
 // rule: mahalleye özel kural (game.js içinde uygulanır)
 //   deniz: deniz manzarası (deniz karesine 2 kare yakın eve +%15)
 //   kirlilik: olumsuz etkiler 1 kare daha geniş
@@ -593,40 +607,35 @@ const row = (y, type, skip = []) => [...Array(12).keys()].filter(x => !skip.incl
 export const HOODS = {
   eski: {
     name: 'Eski Çarşı', icon: '🏘️', unlock: 1, openCost: 0,
-    hint: 'Başlangıç mahallesi. Nehir ve tepeler var.',
-    avenue: { x: 5, y0: 0, y1: 11 },
-    terrain: [...row(10, 'nehir', [5]), [9, 1, 'tepe'], [10, 1, 'tepe'], [10, 2, 'tepe'], [11, 2, 'tepe']],
+    hint: 'Başlangıç mahallesi, şehrin ortası. Nehir ve tepecikler var.',
+    area: [0, 3, 5, 5], start: [4, 4], origin: [12, 12],
     parcelBaseCost: 600,
   },
   sahil: {
     name: 'Sahil', icon: '🏖️', unlock: 8, openCost: 15000, rule: 'deniz',
-    hint: 'Deniz manzarası: denize 2 kare yakın evler +%15 alır.',
-    avenue: { x: 5, y0: 0, y1: 9 },
-    terrain: [...row(11, 'deniz'), ...row(10, 'kiyi'), ...row(9, 'kum', [5]), ...row(8, 'kum', [5])],
+    hint: 'Şehrin güneyi. Deniz manzarası: denize 2 kare yakın evler +%15 alır.',
+    area: [0, 6, 8, 8], start: [4, 7], origin: [12, 24],
     parcelBaseCost: 2500,
   },
   sanayi: {
     name: 'Sanayi Bölgesi', short: 'Sanayi', icon: '🏭', unlock: 15, openCost: 60000, rule: 'kirlilik',
-    hint: 'Kirlilik: olumsuz etkiler 1 kare daha geniş yayılır. Sanayi geliri +%25.',
-    avenue: { x: 5, y0: 0, y1: 11 },
+    hint: 'Şehrin doğusu. Kirlilik: olumsuz etkiler 1 kare daha geniş yayılır. Sanayi geliri +%25.',
+    area: [6, 0, 8, 5], start: [7, 1], origin: [24, 0],
     groundTile: 'zemin-beton', industryBonus: 0.25,
-    terrain: [],
     parcelBaseCost: 6000,
   },
   is: {
     name: 'İş Merkezi', short: 'İş Mrk.', icon: '🏙️', unlock: 22, openCost: 200000, rule: 'golge',
-    hint: 'Yükseklik: gökdelen, rezidans ve saat kulesi yanındaki evlerin manzarasını kapatır (-%10).',
-    avenue: { x: 5, y0: 0, y1: 11 },
+    hint: 'Şehrin kuzeyi. Yükseklik: gökdelen, rezidans ve saat kulesi yanındaki evlerin manzarasını kapatır (-%10).',
+    area: [3, 0, 5, 2], start: [4, 1], origin: [12, 0],
     groundTile: 'zemin-beton',
-    terrain: [],
     parcelBaseCost: 20000,
   },
   tepe: {
     name: 'Tepe Villaları', short: 'Tepe', icon: '⛰️', unlock: 30, openCost: 600000, rule: 'tepe',
-    hint: 'Az arsa, çok yüksek değer. Her kare tepe (+%10); ünlüler her eve gelir.',
-    avenue: { x: 5, y0: 0, y1: 11 },
+    hint: 'Kuzeybatı tepeleri. Az arsa, çok yüksek değer. Her kare tepe (+%10); ünlüler her eve gelir.',
+    area: [0, 0, 2, 2], start: [1, 1], origin: [0, 0],
     allTerrain: 'tepe',
-    terrain: [],
     buyable: ['1,1', '2,1', '1,2', '2,2'], // yalnız bu parseller açılabilir
     parcelBaseCost: 60000,
   },

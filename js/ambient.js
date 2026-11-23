@@ -63,11 +63,11 @@ export function createAmbient(R) {
   }
 
   function targetCounts(s) {
-    const playerRoads = roads.length - CONFIG.gridSize;
+    const playerRoads = roads.length - G.AVENUE_TILES;
     const rented = Object.values(s.buildings).filter(b => G.isHouse(b) && b.contract).length;
     const shops = Object.values(s.buildings).filter(b => G.hasIncome(b) && G.isConnected(s, b)).length;
     return {
-      cars: Math.min(14, 3 + Math.floor(playerRoads / 5) + Math.floor(shops / 2)),
+      cars: Math.min(24, 8 + Math.floor(playerRoads / 5) + Math.floor(shops / 2)),
       people: Math.min(18, 2 + rented * 2 + shops),
     };
   }
@@ -163,7 +163,7 @@ export function createAmbient(R) {
     emitClock += dt;
     // denizde parıltı
     if (emitClock % 0.2 < dt && Math.random() < 0.8) {
-      const x = Math.floor(Math.random() * CONFIG.gridSize), y = Math.floor(Math.random() * CONFIG.gridSize);
+      const x = Math.floor(Math.random() * CONFIG.gridSize), y = CONFIG.gridSize - 1; // deniz en alt sırada
       if (G.terrainAt(x, y) === 'deniz') {
         emit({ kind: 'spark', fx: x + Math.random(), fy: y + Math.random(), h: 0, vx: 0, vy: 0, vh: 0, life: 0, max: 0.8 });
       }

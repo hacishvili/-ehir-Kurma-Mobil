@@ -1,5 +1,5 @@
 // İzometrik şehir çizimi (Canvas 2D). Oyun mantığını değiştirmez, yalnız okur.
-import { CONFIG, BUILDINGS, TENANTS, TERRAIN, UPGRADES, VARIANTS, RESOURCES, VISITORS } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, TERRAIN, UPGRADES, VARIANTS, RESOURCES, VISITORS, HOODS, AVENUES } from './data.js';
 import * as G from './game.js';
 
 export const TW = 64; // kare genişliği
@@ -252,8 +252,8 @@ export function createRenderer(canvas) {
     return WATER_EDGE.has(ter) ? ter : null;
   }
   function outsideAvenue(x, y) {
-    const n = CONFIG.gridSize, av = G.activeHood().avenue;
-    return x === av.x && ((y < 0 && av.y0 === 0) || (y >= n && av.y1 === n - 1));
+    const n = CONFIG.gridSize;
+    return AVENUES.some(av => x === av.x && ((y < 0 && av.y0 === 0) || (y >= n && av.y1 === n - 1)));
   }
 
   // Harita dışı: yabani çayır, uzanan su ve cadde
@@ -332,12 +332,15 @@ export function createRenderer(canvas) {
 
   function drawGround(s, view) {
     const n = CONFIG.gridSize;
+    // yalnız ekrandaki kareler (harita 36x36; hepsini her karede çizmek yavaş)
+    const vt = visibleTiles(2);
+    const gx0 = Math.max(0, vt.x0), gx1 = Math.min(n - 1, vt.x1), gy0 = Math.max(0, vt.y0), gy1 = Math.min(n - 1, vt.y1);
     // açık arsaların çimi tek parça çizilir (kareler arasında çizgi kalmaz)
     const lawnName = SEASON_GROUND[G.season()][0];
     const lawn = texture(lawnName, lawnName === 'kar' ? 2.6 : 2.2) || texture('cim', 2.2);
     ctx.beginPath();
-    for (let y = 0; y < n; y++) {
-      for (let x = 0; x < n; x++) {
+    for (let y = gy0; y <= gy1; y++) {
+      for (let x = gx0; x <= gx1; x++) {
         if (!G.isUnlocked(s, x, y)) continue;
         const d = diamond(x, y, -0.01);
         ctx.moveTo(d.pts[0][0], d.pts[0][1]);
@@ -349,17 +352,17 @@ export function createRenderer(canvas) {
     ctx.fill();
     // sonbaharda çim biraz sararır
     if (G.season() === 'sonbahar') { ctx.fillStyle = 'rgba(190,130,30,0.16)'; ctx.fill(); }
-    seaFill((x, y) => G.terrainAt(x, y) === 'deniz', { x0: 0, x1: n - 1, y0: 0, y1: n - 1 });
+    seaFill((x, y) => G.terrainAt(x, y) === 'deniz', { x0: gx0, x1: gx1, y0: gy0, y1: gy1 });
     // kilitli arsalarda ayrıca biraz koyu yabani çayır (yükü doku zaten taşıyor)
-    for (let y = 0; y < n; y++) {
-      for (let x = 0; x < n; x++) {
+    for (let y = gy0; y <= gy1; y++) {
+      for (let x = gx0; x <= gx1; x++) {
         const d = diamond(x, y);
         const unlocked = G.isUnlocked(s, x, y);
         let fill = null; // çim ve çayır dokuyla çizildi
         const b = G.buildingAt(s, x, y);
         const ter = G.terrainAt(x, y);
         const bridge = G.isAvenue(x, y) && G.terrainAt(x - 1, y) === 'nehir';
-        const hood = G.activeHood();
+        const hood = HOODS[G.hoodAt(x, y)] || {};
         let terImg = ter === 'deniz' ? null : ter ? sprites[TERRAIN[ter].sprite] : bridge ? sprites[TERRAIN.nehir.sprite] : null;
         // Sanayi ve İş Merkezi'nde açık arsalar beton
         const road = b && G.isRoadType(b.type) ? b.type : null;
@@ -463,25 +466,48 @@ export function createRenderer(canvas) {
     ctx.setLineDash([]);
   }
 
+  // Kapalı parseller: açık mahallede fiyatlı kesik çerçeve; kapalı mahallede koyu örtü ve
+  // mahallenin ortasında tek etiket (ad, gereken seviye ya da açılış fiyatı)
   function drawParcels(s, labels = false) {
     const p = CONFIG.parcelSize;
     const max = CONFIG.gridSize / p;
-    const price = G.parcelCost(s);
+    const vt = visibleTiles(p);
     for (let py = 0; py < max; py++) {
       for (let px = 0; px < max; px++) {
         if (s.parcels.includes(`${px},${py}`)) continue;
-        const buyable = G.parcelBuyable(px, py);
+        if ((px + 1) * p < vt.x0 || px * p > vt.x1 || (py + 1) * p < vt.y0 || py * p > vt.y1) continue;
+        const hoodId = G.hoodOfParcel(px, py);
+        const hoodOpen = G.hoodUnlocked(s, hoodId);
+        const buyable = G.parcelBuyable(s, px, py);
         const a = diamond(px * p, py * p).pts[0];
         const b = diamond(px * p + p - 1, py * p).pts[1];
         const c = diamond(px * p + p - 1, py * p + p - 1).pts[2];
         const d = diamond(px * p, py * p + p - 1).pts[3];
         const cx = (a[0] + c[0]) / 2, cy = (a[1] + c[1]) / 2;
-        if (labels) { if (buyable) pill(cx, cy, `🔒 ${G.formatMoney(price)}`, 'rgba(22,32,48,0.78)', '#ffe08a', 11); continue; }
+        if (labels) {
+          // fiyat yalnız açık arsaya komşu parsellerde (hepsinde olunca ekran kalabalıklaşıyor)
+          const next = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => s.parcels.includes(`${px + dx},${py + dy}`));
+          if (buyable && next) pill(cx, cy, `🔒 ${G.formatMoney(G.parcelCost(s, px, py))}`, 'rgba(22,32,48,0.78)', '#ffe08a', 11);
+          continue;
+        }
+        if (!hoodOpen) { poly([a, b, c, d], 'rgba(15,30,15,0.30)'); continue; }
         if (!buyable) { poly([a, b, c, d], 'rgba(20,40,20,0.22)'); continue; }
         ctx.lineWidth = 1.5;
         ctx.setLineDash([5, 5]);
         poly([a, b, c, d], 'rgba(20,40,20,0.10)', 'rgba(255,255,255,0.55)');
         ctx.setLineDash([]);
+      }
+    }
+    if (labels) {
+      // kapalı mahallelerin etiketi
+      for (const [id, hd] of Object.entries(HOODS)) {
+        if (G.hoodUnlocked(s, id)) continue;
+        const [hx, hy] = G.hoodCenter(id);
+        const [sx, sy] = toScreen(hx, hy);
+        if (sx < -120 || sx > W + 120 || sy < -60 || sy > H + 60) continue;
+        pill(sx, sy, `${hd.icon} ${hd.name}`, 'rgba(22,32,48,0.85)', '#ffffff', 13);
+        const sub = s.level < hd.unlock ? `🔒 Seviye ${hd.unlock}` : `Aç · ${G.formatMoney(hd.openCost)} 🪙`;
+        pill(sx, sy + 24 * Math.min(cam.z, 1.4) + 4, sub, 'rgba(22,32,48,0.72)', '#ffe08a', 11);
       }
     }
   }
@@ -703,7 +729,7 @@ export function createRenderer(canvas) {
       if (st === 'baglantisiz') bubble(sx, top, '⚠️', null, null, '#fff3cd');
       else if (st === 'girdi') bubble(sx, top, '❗', null, null, '#ffe2d6');
       else if (st === 'dolu') bubble(sx, top, '📦', null, null, '#ffe2d6');
-      else bubble(sx, top, RESOURCES[out].icon, Math.min(1, (b.prog || 0) / G.cycleMs(b.type)), '#3d8bd9', '#eef5ff');
+      else bubble(sx, top, RESOURCES[out].icon, Math.min(1, (b.prog || 0) / G.cycleMs(b)), '#3d8bd9', '#eef5ff');
     }
     // yükseltilmiş binanın seviyesi
     if (b.level > 1) pill(sx + 18 * cam.z, sy + 4 * cam.z, '★'.repeat(b.level - 1), 'rgba(22,32,48,0.75)', '#ffd54a', 9);
@@ -782,7 +808,7 @@ export function createRenderer(canvas) {
   // gelince yeniden çizilir. back: haritanın arkası, front: haritanın önündeki ağaçlar.
   const scenery = { back: document.createElement('canvas'), front: document.createElement('canvas'), key: '', at: 0 };
   function sceneryKey() {
-    return `${G.activeHood().name}|${G.season()}|${W}|${H}|${Object.keys(sprites).length}`;
+    return `${G.season()}|${W}|${H}|${Object.keys(sprites).length}`;
   }
   function renderScenery(s, now) {
     const M = Math.round(Math.max(W, H) * 0.22);
