@@ -10,10 +10,10 @@ const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 // Araba görselleri (img/araclar/<tür>-<on|arka>.png). w: yakınlaştırma 1'deki ekran genişliği,
 // n: seçilme ağırlığı, hues: renk çeşitleri (derece, hue-rotate). Görsel yüklenmezse kodla çizilir.
 const CAR_KINDS = {
-  sedan: { w: 23, n: 4, hues: [0, 200, 130, 250] },
-  hatchback: { w: 21, n: 4, hues: [0, 150, 170, 300] },
-  taksi: { w: 23, n: 2, hues: [0] },
-  dolmus: { w: 28, n: 1, hues: [0] },
+  sedan: { w: 16, n: 4, hues: [0, 200, 130, 250] },
+  hatchback: { w: 14.5, n: 4, hues: [0, 150, 170, 300] },
+  taksi: { w: 16, n: 2, hues: [0] },
+  dolmus: { w: 20, n: 1, hues: [0] },
 };
 const MAX_PARTICLES = 220;
 
@@ -190,7 +190,7 @@ export function createAmbient(R) {
   }
 
   function drawCar(a) {
-    const { fx, fy, dx, dy } = pose(a, 0.14);
+    const { fx, fy, dx, dy } = pose(a, 0.12);
     // sağ-aşağı (x+) 'on', sağ-yukarı (y-) 'arka'; sola gidenler aynalanır
     const imgs = carImgs[`${a.kind}-${dx > 0 || dy > 0 ? 'on' : 'arka'}`];
     if (imgs) {
@@ -371,7 +371,7 @@ export function createAmbient(R) {
     if (!enabled) return [];
     const out = [];
     for (const c of cars) {
-      const { fx, fy } = pose(c, 0.14);
+      const { fx, fy } = pose(c, 0.12);
       out.push({ key: fx + fy, kx: fx, draw: () => drawCar(c) });
     }
     for (const p of people) {
