@@ -294,6 +294,15 @@ h3 { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin
 .hud-row2 { display: flex; gap: 8px; align-items: flex-start; }
 .hud-row2 #quest { flex: 1 1 auto; min-width: 0; }
 #dailyBtn { pointer-events: auto; margin-left: auto; flex: none; display: flex; align-items: center; gap: 4px; border: 0; border-radius: 12px; padding: 7px 10px; font-weight: 800; font-size: 13px; background: rgba(255,255,255,0.94); box-shadow: 0 3px 0 rgba(22,32,46,0.18); font-variant-numeric: tabular-nums; }
+#seasonBtn { pointer-events: auto; margin-left: auto; flex: none; border: 0; border-radius: 12px; padding: 6px 9px; font-size: 16px; background: rgba(255,255,255,0.94); box-shadow: 0 3px 0 rgba(22,32,46,0.18); }
+#seasonBtn + #dailyBtn { margin-left: 6px; }
+.visitor-card { display: flex; gap: 12px; align-items: center; }
+.visitor-card img { width: 76px; height: 76px; border-radius: 50%; flex: none; }
+.season-list { display: grid; gap: 8px; }
+.season-item { display: flex; gap: 10px; align-items: flex-start; background: #fff; border-radius: 12px; padding: 8px 10px; box-shadow: 0 0 0 1.5px var(--line); }
+.season-item.on { box-shadow: 0 0 0 2.5px var(--accent); }
+.season-item b { display: block; }
+.season-item span.si { font-size: 22px; }
 #dailyBtn.ready { background: var(--coin); animation: nudge 1.4s ease-in-out infinite; }
 .daily { display: grid; gap: 10px; }
 .goal { background: #fff; border-radius: 14px; padding: 10px 12px; display: grid; gap: 6px; box-shadow: 0 0 0 1.5px var(--line), 0 3px 0 var(--line); }

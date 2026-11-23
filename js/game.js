@@ -1,6 +1,6 @@
 // Oyun mantığı. Ekran çizimi ve dokunma burada yok; böylece testler tarayıcısız çalışır.
 import { CONFIG, BUILDINGS, TENANTS, QUESTS, TERRAIN, COLLECTION, HOODS, TALL, MARKET_EVENTS, STORIES, DAILY_GOALS,
-  RESOURCES, MATS, UPGRADES, VARIANTS, INDUSTRY, ACHIEVEMENTS } from './data.js';
+  RESOURCES, MATS, UPGRADES, VARIANTS, INDUSTRY, ACHIEVEMENTS, VISITORS, WEEKLY_GOALS, SEASONS } from './data.js';
 
 export const MIN = 60 * 1000;
 export const HOUR = 60 * MIN;
@@ -44,7 +44,9 @@ export function hydrate(s) {
   if (!s.hood) { s.hood = 'eski'; s.hoodsOpen = ['eski']; s.hoods = {}; }
   if (!s.rareUnlocked) s.rareUnlocked = [];
   if (!s.stats.storiesDone) s.stats.storiesDone = 0;
-  for (const k of ['built', 'incomeCollected', 'renewals', 'goodsSold']) if (!s.stats[k]) s.stats[k] = 0;
+  for (const k of ['built', 'incomeCollected', 'renewals', 'goodsSold', 'visitorsHappy']) if (!s.stats[k]) s.stats[k] = 0;
+  if (s.visitor === undefined) s.visitor = null;
+  if (s.seasonOverride === undefined) s.seasonOverride = null;
   if (!s.stats.produced) s.stats.produced = {};
   if (!s.inv) s.inv = {};
   for (const k of Object.keys(RESOURCES)) s.inv[k] = s.inv[k] || 0;
@@ -54,6 +56,7 @@ export function hydrate(s) {
   if (!s.market) s.market = { nextEventAt: s.gameTime + CONFIG.market.eventEveryHours * HOUR / 2, nextHistAt: s.gameTime, hoods: {} };
   for (const id of s.hoodsOpen) ensureMarket(s, id);
   setActiveHood(s.hood);
+  SEASON = currentSeason(s);
   Object.defineProperty(s, '_cache', { value: { version: -1 }, writable: true, enumerable: false });
   Object.defineProperty(s, 'events', { value: [], writable: true, enumerable: false });
   Object.defineProperty(s, 'version', { value: 0, writable: true, enumerable: false });
@@ -274,14 +277,33 @@ export function bonusAt(s, x, y, tenant = null, opts = {}) {
   const sources = Object.values(s.buildings).filter(b => b.id !== ignoreId);
   if (extra) sources.push(extra);
   const perType = {};
+  const boost = SEASONS[SEASON].effectBoost || {};
   for (const b of sources) {
     const e = def(b.type).effect;
     if (!e || covers(b, x, y)) continue;
     const r = e.radius + (H.rule === 'kirlilik' && e.all < 0 ? 1 : 0);
     if (!inRadius(b, x, y, r)) continue;
-    const v = e.all + (tenant ? ((e.tenants || {})[tenant] || 0) : 0);
+    let v = e.all + (tenant ? ((e.tenants || {})[tenant] || 0) : 0);
+    const k = boost[def(b.type).cat];
+    if (k && v > 0) v = Math.round(v * k);
     perType[b.type] = (perType[b.type] || 0) + v;
   }
+  // olumsuz etkiyi azaltanlar: geri dönüşüm tesisi, dayanıklı kiracı (işçi), dayanıklı ev (lojman)
+  const houseType = opts.houseType || (extra && covers(extra, x, y) ? extra.type : sources.find(b => covers(b, x, y))?.type);
+  const hd = houseType ? def(houseType) : null;
+  let soften = 1;
+  for (const b of sources) {
+    const c = def(b.type).cleanse;
+    if (c && !covers(b, x, y) && inRadius(b, x, y, c.radius)) soften = Math.min(soften, 1 - c.factor);
+  }
+  if (tenant && TENANTS[tenant].tough) soften *= TENANTS[tenant].tough;
+  if (hd?.resist) soften *= 0.5;
+  if (soften < 1) for (const k of Object.keys(perType)) if (perType[k] < 0) perType[k] = Math.round(perType[k] * soften);
+  // mahalleye uygun ev (konak Eski Çarşı'da ...) ve mevsim
+  const hb = hd?.cat === 'konut' ? hd.hoodBonus?.[s.hood] : 0;
+  if (hb) perType.mahalle = hb;
+  const sb = hd?.cat === 'konut' || !hd ? SEASONS[SEASON].rentHood?.[s.hood] : 0;
+  if (sb) perType.mevsim = sb;
   // İş Merkezi: yüksek binalar yanındaki evin manzarasını kapatır
   if (H.rule === 'golge' && sources.some(b => TALL.includes(b.type) && !covers(b, x, y) && inRadius(b, x, y, 1))) {
     perType.golge = (perType.golge || 0) - 10;
@@ -377,7 +399,8 @@ export function generateCards(s, house, rng = Math.random) {
 // Bu ev türüne bu seviyede gelebilecek kiracılar
 export function availableTenants(s, houseType) {
   return Object.entries(TENANTS)
-    .filter(([, t]) => (t.unlock || 1) <= s.level && (!t.houses || t.houses.includes(houseType) || H.rule === 'tepe'))
+    .filter(([, t]) => (t.unlock || 1) <= s.level && (!t.houses || t.houses.includes(houseType) || H.rule === 'tepe')
+      && (!t.hoods || t.hoods.includes(s.hood)))
     .map(([id]) => id);
 }
 
@@ -489,7 +512,8 @@ export function collectRent(s, houseId, rng = Math.random) {
 function maybeStartStory(s, h, sat, rng) {
   if (h.story || !h.tenure || h.tenure.renewals < CONFIG.storyAfterRenewals - 1) return;
   if (sat < CONFIG.satHappy || rng() >= CONFIG.storyChance) return;
-  const pool = STORIES.filter(st => st.tenants.includes(h.tenure.tenant));
+  const pool = STORIES.filter(st => st.tenants.includes(h.tenure.tenant) &&
+    (st.request.kind !== 'near' || st.request.types.some(type => def(type).unlock <= s.level)));
   if (!pool.length) return;
   // açılmamış ödülü olan hikayeler önce
   const fresh = pool.filter(st => !st.reward.unlock || !s.rareUnlocked.includes(st.reward.unlock));
@@ -716,6 +740,8 @@ export function advance(s, realMs, rng = Math.random) {
   marketTick(s, dt, rng);
   checkAchievements(s);
   expireStories(s);
+  refreshSeason(s);
+  visitorTick(s, rng);
 }
 
 // Görüntülenen mahallede ticari gelir biriktir (diğer mahalleler geçişte hesaplanır)
@@ -733,7 +759,8 @@ function accrueIncome(s, dt) {
 export function incomePerHour(type) {
   const d = def(type);
   const bonus = d.cat === 'sanayi' && H.industryBonus ? H.industryBonus : 0;
-  return Math.round((d.incomePerHour || 0) * (1 + bonus));
+  const season = SEASONS[SEASON].income?.[type] || 1;
+  return Math.round((d.incomePerHour || 0) * (1 + bonus) * season);
 }
 
 // Oyuncu yokken olanların özeti.
@@ -781,6 +808,10 @@ export function canPlace(s, x, y, ignoreId = null, size = 1, type = null) {
       if (b && b.id !== ignoreId) return fail(size > 1 ? `Bu bina ${size}×${size} kare ister; yer dolu.` : 'Bu kare dolu.');
     }
   }
+  const nn = type && def(type)?.needsNear;
+  if (nn && !nn.terrain.some(ter => nearTerrain(x, y, ter, nn.radius))) {
+    return fail(`${def(type).name} yalnız deniz kenarına kurulur (denize en çok ${nn.radius} kare).`);
+  }
   return ok();
 }
 
@@ -788,6 +819,7 @@ export function build(s, type, x, y, rng = Math.random) {
   const d = def(type);
   if (!d) return fail('Bilinmeyen bina.');
   if (d.unlock > s.level) return fail(`Seviye ${d.unlock} gerekli.`);
+  if (d.season && d.season !== SEASON) return fail(`${d.name} yalnız ${SEASONS[d.season].name.toLocaleLowerCase('tr')} mevsiminde kurulur.`);
   if (d.rare && !s.rareUnlocked.includes(type)) return fail('Bu nadir süsleme bir kiracı hikayesiyle açılır.');
   const p = canPlace(s, x, y, null, sizeOf(type), type);
   if (!p.ok) return p;
@@ -1355,4 +1387,162 @@ export function testSetLevel(s, level) {
   s.level = Math.max(1, Math.round(level));
   s.xp = 0;
   return ok({ level: s.level });
+}
+
+
+// ---------- Mevsimler ----------
+
+let SEASON = 'yaz';
+
+// Gerçek takvime göre mevsim (test için Menü'den seçilebilir)
+export function currentSeason(s, date = new Date()) {
+  if (s?.seasonOverride && SEASONS[s.seasonOverride]) return s.seasonOverride;
+  const m = date.getMonth() + 1;
+  return Object.keys(SEASONS).find(k => SEASONS[k].months.includes(m)) || 'yaz';
+}
+
+export function season() {
+  return SEASON;
+}
+
+function refreshSeason(s) {
+  const now = currentSeason(s);
+  if (now === SEASON) return;
+  SEASON = now;
+  changed(s); // konum bonusları yeniden hesaplansın
+  emit(s, 'season', { id: now });
+}
+
+export function setSeasonOverride(s, id) {
+  s.seasonOverride = id && SEASONS[id] ? id : null;
+  refreshSeason(s);
+  return ok({ season: SEASON });
+}
+
+// ---------- Ziyaretçiler ----------
+
+function visitorTick(s, rng) {
+  const v = s.visitor;
+  if (v && (s.gameTime > v.until || (v.hood === s.hood && !s.buildings[v.id]))) {
+    s.visitor = null;
+    s.nextVisitorAt = s.gameTime + CONFIG.visitorEveryHours * HOUR;
+    emit(s, 'visitorLeft', { visitor: v.type });
+    return;
+  }
+  if (v || s.level < CONFIG.visitorMinLevel) return;
+  if (s.nextVisitorAt === undefined) s.nextVisitorAt = s.gameTime + HOUR;
+  if (s.gameTime < s.nextVisitorAt) return;
+  const spots = Object.values(s.buildings).filter(b => !isRoadType(b.type) && isConnected(s, b));
+  if (spots.length < 3) { s.nextVisitorAt = s.gameTime + HOUR; return; }
+  const types = Object.keys(VISITORS);
+  const type = types[Math.floor(rng() * types.length) % types.length];
+  const b = spots[Math.floor(rng() * spots.length) % spots.length];
+  s.visitor = { type, id: b.id, hood: s.hood, n: VISITORS[type].n(s.level), until: s.gameTime + CONFIG.visitorStayHours * HOUR };
+  emit(s, 'visitor', { visitor: type, x: b.x, y: b.y });
+}
+
+// Görüntülenen mahalledeki ziyaretçi ve durduğu bina
+export function visitorHere(s) {
+  const v = s.visitor;
+  if (!v || v.hood !== s.hood || !s.buildings[v.id]) return null;
+  return { ...v, def: VISITORS[v.type], building: s.buildings[v.id] };
+}
+
+// İstek karşılanıyor mu: have şu anki değer, need istenen
+export function visitorCheck(s) {
+  const v = s.visitor;
+  if (!v) return null;
+  const kind = VISITORS[v.type].check;
+  let have = 0;
+  if (kind === 'variety') {
+    have = new Set(Object.values(s.buildings).filter(b => ['ticari', 'simge'].includes(def(b.type).cat)).map(b => b.type)).size;
+  } else if (kind === 'happy') {
+    const rented = Object.values(s.buildings).filter(b => isHouse(b) && b.contract);
+    if (rented.length < 3) return { met: false, have: 0, need: v.n, few: true };
+    have = Math.round(rented.filter(h => satisfaction(s, h) >= CONFIG.satHappy).length / rented.length * 100);
+  } else if (kind === 'bonus') {
+    have = Math.max(0, ...Object.values(s.buildings).filter(isHouse).map(h => bonusAt(s, h.x, h.y).total));
+  }
+  return { met: have >= v.n, have, need: v.n };
+}
+
+export function greetVisitor(s) {
+  const v = s.visitor;
+  if (!v) return fail('Ziyaretçi yok.');
+  const c = visitorCheck(s);
+  if (!c.met) return fail('İstek henüz karşılanmadı.');
+  const rw = VISITORS[v.type].reward(s.level);
+  s.money += rw.money || 0;
+  s.diamonds += rw.diamonds || 0;
+  if (rw.xp) addXp(s, rw.xp);
+  if (rw.market) startRandomEvent(s, Math.random, s.hood, 'haber');
+  s.stats.visitorsHappy++;
+  s.visitor = null;
+  s.nextVisitorAt = s.gameTime + CONFIG.visitorEveryHours * HOUR;
+  emit(s, 'visitorHappy', { visitor: v.type });
+  return ok({ reward: rw });
+}
+
+export function dismissVisitor(s) {
+  if (!s.visitor) return fail('Ziyaretçi yok.');
+  s.visitor = null;
+  s.nextVisitorAt = s.gameTime + CONFIG.visitorEveryHours * HOUR;
+  return ok();
+}
+
+// ---------- Haftalık hedefler ----------
+
+// ISO hafta: "2026-W48"
+export function weekKey(date = new Date()) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const y0 = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const w = Math.ceil(((d - y0) / 86400000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(w).padStart(2, '0')}`;
+}
+
+export function ensureWeekly(s, week = weekKey()) {
+  if (s.weekly?.week === week) return s.weekly;
+  let h = 0;
+  for (const ch of week) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const ids = WEEKLY_GOALS.map(g => g.id).sort((a, b) => ((h ^ hashStr(a)) % 997) - ((h ^ hashStr(b)) % 997));
+  s.weekly = {
+    week,
+    bonusClaimed: false,
+    goals: ids.slice(0, CONFIG.weeklyCount).map(id => {
+      const g = WEEKLY_GOALS.find(x => x.id === id);
+      return { id, n: g.n(s.level), base: s.stats[g.stat] || 0, claimed: false };
+    }),
+  };
+  return s.weekly;
+}
+
+export function weeklyProgress(s, goal) {
+  const g = WEEKLY_GOALS.find(x => x.id === goal.id);
+  return Math.min(goal.n, Math.max(0, (s.stats[g.stat] || 0) - goal.base));
+}
+
+export function weeklyText(goal) {
+  return WEEKLY_GOALS.find(x => x.id === goal.id).text(goal.n);
+}
+
+export function claimWeekly(s, index) {
+  const goal = s.weekly?.goals[index];
+  if (!goal || goal.claimed) return fail('Bu hedef zaten alındı.');
+  if (weeklyProgress(s, goal) < goal.n) return fail('Hedef henüz tamamlanmadı.');
+  goal.claimed = true;
+  s.diamonds += CONFIG.weeklyDiamonds;
+  let bonus = 0;
+  if (!s.weekly.bonusClaimed && s.weekly.goals.every(g => g.claimed)) {
+    s.weekly.bonusClaimed = true;
+    bonus = CONFIG.weeklyBonusDiamonds;
+    s.diamonds += bonus;
+  }
+  addXp(s, 30);
+  return ok({ diamonds: CONFIG.weeklyDiamonds + bonus, bonus });
+}
+
+export function weeklyReadyCount(s) {
+  return (s.weekly?.goals || []).filter(g => !g.claimed && weeklyProgress(s, g) >= g.n).length;
 }

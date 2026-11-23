@@ -1,5 +1,5 @@
 // Oyunun ekranı: döngü, dokunma, menüler. Kurallar game.js'te, rakamlar data.js'te.
-import { CONFIG, BUILDINGS, TENANTS, CATEGORIES, QUESTS, COLLECTION, HOODS, STORIES, RESOURCES, ACHIEVEMENTS, INDUSTRY } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, CATEGORIES, QUESTS, COLLECTION, HOODS, STORIES, RESOURCES, ACHIEVEMENTS, INDUSTRY, VISITORS, SEASONS } from './data.js';
 import * as G from './game.js';
 import { createRenderer, loadSprites } from './render.js';
 import { createAmbient } from './ambient.js';
@@ -142,6 +142,18 @@ function drainEvents(t) {
       const it = COLLECTION[e.item];
       view.floaters.push({ x: e.x, y: e.y, text: `+1 ${it.name}`, t0: t + 400, color: '#bde7ff' });
       toast(`Koleksiyon parçası buldun: ${it.name}! (Menü → Koleksiyon)`);
+    } else if (e.type === 'visitor') {
+      const v = VISITORS[e.visitor];
+      A.play('news');
+      view.floaters.push({ x: e.x, y: e.y, text: `${v.icon} ziyaretçi`, t0: t, color: '#ffe08a' });
+      toast(`${v.icon} ${v.name} şehrine geldi! Binanın üstündeki portreye dokun.`);
+    } else if (e.type === 'visitorLeft') {
+      toast(`${VISITORS[e.visitor].name} bekleyemedi, şehirden ayrıldı.`, true);
+    } else if (e.type === 'visitorHappy') {
+      A.play('chime');
+    } else if (e.type === 'season') {
+      const se = SEASONS[e.id];
+      toast(`${se.icon} ${se.name} geldi! ${se.text}`);
     } else if (e.type === 'tenantLeft') {
       toast('Bir kiracı memnun kalmadığı için ayrıldı. Kirası yine de toplandı.', true);
     }
@@ -179,8 +191,11 @@ function updateHud() {
   if (hudCache.xp !== w) { hudCache.xp = w; $('xpfill').style.width = w; }
 
   G.ensureDaily(s);
+  G.ensureWeekly(s);
+  setText('seasonIcon', SEASONS[G.season()].icon);
+  $('seasonBtn').hidden = mode !== 'normal';
   const dDone = s.daily.goals.filter(g => g.claimed).length;
-  const ready = G.dailyReadyCount(s);
+  const ready = G.dailyReadyCount(s) + G.weeklyReadyCount(s);
   setText('dailyProg', `${dDone}/${s.daily.goals.length}`);
   $('dailyBtn').classList.toggle('ready', ready > 0);
   $('dailyBtn').hidden = mode !== 'normal';
@@ -305,8 +320,11 @@ function onUp(e) {
   if (!pointers.has(e.pointerId)) return;
   pointers.delete(e.pointerId);
   if (gesture && gesture.kind === 'tap' && !gesture.moved && pointers.size === 0) {
-    const [tx, ty] = R.screenToTile(gesture.sx, gesture.sy);
-    onTap(tx, ty);
+    if (mode === 'normal' && R.hitVisitor(gesture.sx, gesture.sy)) { A.play('tap'); openVisitor(); }
+    else {
+      const [tx, ty] = R.screenToTile(gesture.sx, gesture.sy);
+      onTap(tx, ty);
+    }
   }
   if (pointers.size === 0 || (gesture && gesture.kind === 'pinch')) gesture = null;
 }
@@ -709,9 +727,11 @@ function sellAction(id) {
 
 // ---------- Bina kartı ----------
 
-function openBuilding(id) {
+function openBuilding(id, skipVisitor = false) {
   const b = s.buildings[id];
   if (!b) return;
+  const vis = G.visitorHere(s);
+  if (!skipVisitor && vis && vis.id === id) return openVisitor();
   view.selectedId = id;
   const d = BUILDINGS[b.type];
   if (d.cat === 'konut') return openHouse(id);
@@ -874,7 +894,7 @@ function openRoad(id) {
 function openBuild() {
   view.selectedId = null;
   openSheet({
-    sig: () => `${s.level}|${Math.floor(s.money / 25)}|${s.version}`,
+    sig: () => `${s.level}|${Math.floor(s.money / 25)}|${s.version}|${G.season()}`,
     render: () => {
       let html = `<h2>İnşa et · ${G.activeHood().name}</h2><p class="sub">Fiyatlar mahalle endeksine göre: %${Math.round(G.marketIndex(s))}. Endeks düşükken inşa et, yükselince değerlensin.</p>`;
       for (const [cat, info] of Object.entries(CATEGORIES)) {
@@ -883,7 +903,8 @@ function openBuild() {
         html += `<div class="cat-title"><h3>${info.name}</h3><small>${info.hint}</small></div><div class="blist">`;
         for (const [type, d] of items) {
           const rareLocked = d.rare && !s.rareUnlocked.includes(type);
-          const locked = d.unlock > s.level || rareLocked;
+          const seasonLocked = d.season && d.season !== G.season();
+          const locked = d.unlock > s.level || rareLocked || seasonLocked;
           const cost = G.buildCost(s, type);
           const poor = cost > s.money;
           const prodText = d.produce ? (() => {
@@ -893,12 +914,14 @@ function openBuild() {
             return `${p.minutes} dk: ${ins ? ins + ' → ' : ''}${outs}`;
           })() : '';
           const matsText = Object.keys(G.matsFor(type)).length ? 'Malzeme: ' + Object.entries(G.matsFor(type)).map(([k, n]) => `${n} ${RESOURCES[k].icon}`).join(' ') : '';
+          const near = d.needsNear ? 'Yalnız deniz kenarına (Sahil)' : '';
+          const hoodB = d.hoodBonus ? Object.entries(d.hoodBonus).map(([h, v]) => `${HOODS[h].short || HOODS[h].name}'da +%${v}`).join(', ') : '';
           const detail = d.cat === 'konut'
-            ? [`Saatte ~${G.formatMoney(d.rentPerHour)} kira (kiracıya göre)`, matsText].filter(Boolean).join(' · ')
-            : [prodText, d.incomePerHour ? `Saatte ${d.incomePerHour} gelir` : '', matsText, effectText(type)].filter(Boolean).join(' · ');
+            ? [`Saatte ~${G.formatMoney(d.rentPerHour)} kira (kiracıya göre)`, hoodB, d.resist ? 'Kirlilikten az etkilenir' : '', near, matsText].filter(Boolean).join(' · ')
+            : [prodText, d.incomePerHour ? `Saatte ${d.incomePerHour} gelir` : '', d.cleanse ? `Çevresindeki olumsuz etkiyi %${d.cleanse.factor * 100} azaltır` : '', near, matsText, effectText(type)].filter(Boolean).join(' · ');
           html += `<button type="button" class="bitem ${locked ? 'locked' : ''} ${poor ? 'poor' : ''}" data-act="pick" data-type="${type}">
             <span class="bi">${d.icon}<img src="img/binalar/${type}.png" alt="" onerror="this.remove()"></span><span class="bn">${d.name}</span>
-            <span class="bc">${rareLocked ? '📜 Hikayeyle açılır' : locked ? `🔒 Seviye ${d.unlock}` : d.diamondCost ? `💎 ${d.diamondCost} elmas` : `${G.formatMoney(cost)} 🪙`}</span>
+            <span class="bc">${seasonLocked ? `${SEASONS[d.season].icon} Yalnız ${SEASONS[d.season].name.toLocaleLowerCase('tr')}` : rareLocked ? '📜 Hikayeyle açılır' : locked ? `🔒 Seviye ${d.unlock}` : d.diamondCost ? `💎 ${d.diamondCost} elmas` : `${G.formatMoney(cost)} 🪙`}</span>
             <span class="be">${detail}</span></button>`;
         }
         html += '</div>';
@@ -910,6 +933,7 @@ function openBuild() {
         const d = BUILDINGS[ds.type];
         if (d.rare && !s.rareUnlocked.includes(ds.type)) return toast(`${d.name} nadir bir süsleme: memnun bir kiracının isteğini yerine getirince açılır.`, true);
         if (d.unlock > s.level) return toast(`${d.name} seviye ${d.unlock}'te açılır.`, true);
+        if (d.season && d.season !== G.season()) return toast(`${d.name} yalnız ${SEASONS[d.season].name.toLocaleLowerCase('tr')} mevsiminde kurulur.`, true);
         if (G.buildCost(s, ds.type) > s.money) return toast('Yeterli para yok.', true);
         if (d.diamondCost && s.diamonds < d.diamondCost) return toast(`${d.name} için ${d.diamondCost} elmas gerekli.`, true);
         startPlacement(ds.type);
@@ -944,7 +968,7 @@ function openParcel(px, py) {
 function openDaily() {
   view.selectedId = null;
   openSheet({
-    sig: () => JSON.stringify(s.daily) + s.daily.goals.map(g => G.dailyProgress(s, g)).join(),
+    sig: () => JSON.stringify(s.daily) + JSON.stringify(s.weekly) + s.daily.goals.map(g => G.dailyProgress(s, g)).join() + s.weekly.goals.map(g => G.weeklyProgress(s, g)).join(),
     render: () => {
       const d = s.daily;
       let html = `<h2>🎯 Günlük hedefler</h2><p class="sub">Her gün 3 yeni hedef. Her biri ${CONFIG.dailyDiamonds} elmas; üçü birden +${CONFIG.dailyBonusDiamonds} elmas daha.</p><div class="daily">`;
@@ -958,14 +982,84 @@ function openDaily() {
         </div>`;
       });
       html += `</div><p class="sub" style="margin:0">${d.bonusClaimed ? 'Bugünün bonusu alındı. Yarın yeni hedefler gelecek.' : 'Hedefler gece yarısı yenilenir.'}</p>`;
-      return html;
+      const w = s.weekly;
+      html += `<h2 style="margin-top:14px">📅 Haftalık hedefler</h2><p class="sub">Her pazartesi 3 büyük hedef. Her biri ${CONFIG.weeklyDiamonds} elmas; üçü birden +${CONFIG.weeklyBonusDiamonds} elmas daha.</p><div class="daily">`;
+      w.goals.forEach((g, i) => {
+        const p = G.weeklyProgress(s, g);
+        const done = p >= g.n;
+        html += `<div class="goal ${g.claimed ? 'claimed' : ''}">
+          <div class="row"><b class="grow">${G.weeklyText(g)}</b><span class="sub" style="margin:0">${G.formatMoney(p)}/${G.formatMoney(g.n)}</span></div>
+          <div class="meter"><span style="width:${(p / g.n * 100).toFixed(1)}%;background:${done ? 'var(--good)' : 'var(--accent)'}"></span></div>
+          ${g.claimed ? '<span class="chip good">✓ Alındı</span>' : `<button type="button" class="btn ${done ? 'coin' : ''} small" data-act="claimw" data-i="${i}" ${done ? '' : 'disabled'}>${done ? `Al · ${CONFIG.weeklyDiamonds} elmas` : 'Devam ediyor'}</button>`}
+        </div>`;
+      });
+      return html + '</div>';
     },
     actions: {
       claim: ds => {
         const r = G.claimDaily(s, Number(ds.i));
         if (result(r, r.bonus ? `Üç hedef tamam! +${r.diamonds} elmas` : `+${r.diamonds} elmas`)) { A.play('chime'); save(); }
       },
+      claimw: ds => {
+        const r = G.claimWeekly(s, Number(ds.i));
+        if (result(r, r.bonus ? `Haftanın üç hedefi tamam! +${r.diamonds} elmas` : `+${r.diamonds} elmas`)) { A.play('chime'); save(); }
+      },
     },
+  });
+}
+
+// ---------- Ziyaretçi ----------
+
+function openVisitor() {
+  const v = G.visitorHere(s);
+  if (!v) return;
+  view.selectedId = v.id;
+  openSheet({
+    valid: () => !!G.visitorHere(s),
+    sig: () => `${JSON.stringify(G.visitorCheck(s))}|${Math.floor((v.until - s.gameTime) / G.MIN)}`,
+    render: () => {
+      const c = G.visitorCheck(s);
+      const rw = v.def.reward(s.level);
+      const rwText = [rw.money ? `${G.formatMoney(rw.money)} 🪙` : '', rw.diamonds ? `${rw.diamonds} elmas` : '', rw.xp ? `${rw.xp} XP` : '', rw.market ? `mahalle endeksi +${rw.market} (1 gün)` : ''].filter(Boolean).join(' · ');
+      const left = Math.max(0, v.until - s.gameTime);
+      const status = c.few ? 'Henüz 3 kiracın yok.' : c.met ? 'İsteği karşılanıyor!' : `Şu an: ${c.have}${v.def.check === 'variety' ? '' : '%'} · istenen: ${c.need}${v.def.check === 'variety' ? '' : '%'}`;
+      return `<h2>${v.def.icon} ${v.def.name}</h2>
+        <div class="visitor-card"><img src="img/ui/${v.def.portrait}.png" alt=""><p style="margin:0">“${v.def.text(v.n)}”</p></div>
+        <p class="chip ${c.met ? 'good' : 'bad'}">${status}</p>
+        <p class="sub" style="margin:0">Ödül: ${rwText}<br>${G.formatDuration(left)} daha bekler.</p>
+        <div class="btns">
+          <button type="button" class="btn coin" data-act="greet" ${c.met ? '' : 'disabled'}>Karşıla, ödülü al</button>
+          <button type="button" class="btn ghost" data-act="building">Binayı aç</button>
+          <button type="button" class="btn danger small" data-act="send">Uğurla</button>
+        </div>`;
+    },
+    actions: {
+      greet: () => {
+        const r = G.greetVisitor(s);
+        if (result(r, `${v.def.name} çok memnun kaldı!`)) { AMB.burst(v.building.x, v.building.y, 600); closeSheet(); save(); }
+      },
+      building: () => openBuilding(v.id, true),
+      send: () => { G.dismissVisitor(s); closeSheet(); save(); },
+    },
+  });
+}
+
+// ---------- Mevsim ----------
+
+function openSeason() {
+  view.selectedId = null;
+  openSheet({
+    sig: () => G.season(),
+    render: () => {
+      const cur = G.season();
+      let html = `<h2>${SEASONS[cur].icon} Mevsim: ${SEASONS[cur].name}</h2><p class="sub">Mevsim gerçek takvimle değişir. Her mevsimin kendi kuralı ve kendi süslemesi var; mevsim süsleri yalnız kendi mevsiminde kurulur.</p><div class="season-list">`;
+      for (const [id, se] of Object.entries(SEASONS)) {
+        const deco = Object.entries(BUILDINGS).filter(([, d]) => d.season === id).map(([, d]) => `${d.icon} ${d.name}`).join(', ');
+        html += `<div class="season-item ${id === cur ? 'on' : ''}"><span class="si">${se.icon}</span><span><b>${se.name}${id === cur ? ' · şimdi' : ''}</b>${se.text}${deco ? `<br><small>Süsleme: ${deco}</small>` : ''}</span></div>`;
+      }
+      return html + '</div>';
+    },
+    actions: {},
   });
 }
 
@@ -1042,7 +1136,7 @@ function goHood(id) {
 function openMenu() {
   view.selectedId = null;
   openSheet({
-    sig: () => `${s.speed}|${s.testMode}|${s.level}|${AMB.enabled}|${prefs.sfx}|${prefs.music}|${s.achieved.length}|${JSON.stringify(s.collection)}|${s.collectionSets}`,
+    sig: () => `${s.speed}|${s.testMode}|${s.seasonOverride}|${s.level}|${AMB.enabled}|${prefs.sfx}|${prefs.music}|${s.achieved.length}|${JSON.stringify(s.collection)}|${s.collectionSets}`,
     render: () => `<h2>Menü</h2>
       <div><h3>Ses</h3>
         <div class="btns"><button type="button" class="btn ${prefs.sfx ? 'coin' : ''}" data-act="sfx">Efektler: ${prefs.sfx ? 'açık' : 'kapalı'}</button>
@@ -1054,6 +1148,8 @@ function openMenu() {
       <div><h3>Zaman hızı (test için)</h3>
         <div class="btns">${CONFIG.speeds.map(v => `<button type="button" class="btn ${s.speed === v ? 'coin' : ''}" data-act="speed" data-v="${v}">×${v}</button>`).join('')}</div>
         <p class="sub" style="margin:6px 0 0">×60'ta 1 dakika = 1 saat. Kontratları hızlıca denemek için.</p></div>
+      <div><h3>${SEASONS[G.season()].icon} Mevsim (test için)</h3>
+        <div class="btns"><button type="button" class="btn ${!s.seasonOverride ? 'coin' : ''}" data-act="season" data-v="">Takvime göre</button>${Object.entries(SEASONS).map(([id, se]) => `<button type="button" class="btn ${s.seasonOverride === id ? 'coin' : ''}" data-act="season" data-v="${id}">${se.icon} ${se.name}</button>`).join('')}</div></div>
       <div><h3>🧪 Test modu</h3>
         <div class="btns"><button type="button" class="btn ${s.testMode ? 'coin' : ''}" data-act="testmode">Sınırsız para ve elmas: ${s.testMode ? 'açık' : 'kapalı'}</button></div>
         <div class="btns" style="margin-top:6px">${[10, 20, 30].map(v => `<button type="button" class="btn ${s.level >= v ? 'coin' : ''}" data-act="testlevel" data-v="${v}">Seviye ${v}</button>`).join('')}</div>
@@ -1074,6 +1170,7 @@ function openMenu() {
       <div><h3>Oyun</h3><button type="button" class="btn danger" data-act="reset">Baştan başla</button></div>
       <p class="sub" style="margin:0">Prototip 0.1 · ilerleme bu cihazda saklanır.</p>`,
     actions: {
+      season: ds => { G.setSeasonOverride(s, ds.v || null); panel.sigValue = ''; save(); },
       testmode: () => { G.setTestMode(s, !s.testMode); toast(s.testMode ? 'Test modu açık: para ve elmas sınırsız' : 'Test modu kapalı'); panel.sigValue = ''; save(); },
       testlevel: ds => { G.testSetLevel(s, Number(ds.v)); toast(`Seviye ${ds.v}`); panel.sigValue = ''; save(); },
       speed: ds => { s.speed = Number(ds.v); toast(`Zaman hızı ×${ds.v}`); save(); },
@@ -1189,6 +1286,7 @@ function bindUi() {
   const unlockAudio = () => { A.unlock(); };
   document.addEventListener('pointerdown', unlockAudio, { once: true });
   for (const b of document.querySelectorAll('.dock-btn')) b.addEventListener('click', () => A.play('tap'));
+  $('seasonBtn').addEventListener('click', () => { A.play('tap'); openSeason(); });
   $('dailyBtn').addEventListener('click', () => { A.play('tap'); if (mode === 'road') setMode('normal'); openDaily(); });
   window.addEventListener('pagehide', save);
 

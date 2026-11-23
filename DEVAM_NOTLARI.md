@@ -217,3 +217,17 @@ Kullanıcı: harita ekran boyunda olsun, kaydırınca mavi arka plan görünmesi
 - Hız: harita dışı sabit olduğu için ekrandan biraz büyük ara belleğe bir kez çizilir, kaydırırken yalnız kopyalanır; yakınlaşma bitince ya da kenara gelince yeniden çizilir. Telefon boyutunda 60 kare/sn (ara bellek olmadan 17'ydi).
 - Yakınlık: açılışta harita ekrana sığar; bundan daha fazla uzaklaşılamaz (`fitZoom`). Kaydırma haritanın taştığı kadar + biraz pay.
 - Sürüm 0.2.2 (sürüm kodu 4).
+
+## 2026-11-23 — 2. aşama: içerik, ziyaretçiler, haftalık hedefler, mevsimler
+Görseller (Claude, ~50 kredi): kaynaklar `img/kaynak/`, doğa ve mevsim ağaçları `img/kaynak/doga/`.
+- **Yeni binalar (28):** konut konak, çiftlik evi, işçi lojmanı, yalı; ticari berber, lokanta, butik, sinema; kamu postane, karakol, itfaiye; sanayi geri dönüşüm tesisi, güneş santrali; simge deniz feneri, müze, kültür merkezi; süs servi, söğüt, bayrak, çardak, otobüs durağı, bisiklet parkı, sebil; mevsim süsleri kardan adam, yılbaşı ağacı (kış), lale bahçesi (ilkbahar), dondurma arabası (yaz), hasat köşesi (sonbahar). Toplam 88 bina.
+- **Yeni kurallar (`js/data.js` alanları, uygulaması `bonusAt`/`canPlace`/`build`):** `hoodBonus` (konak Eski Çarşı'da +%15, çiftlik Tepe'de +%20, lojman Sanayi'de +%20); `resist` (lojman olumsuz etkinin yarısını hisseder); `needsNear` (yalı ve deniz feneri yalnız deniz kenarına); `cleanse` (geri dönüşüm tesisi 2 kare içindeki olumsuz etkiyi yarıya indirir); `season` (mevsim süsü yalnız kendi mevsiminde kurulur).
+- **Rezidans yükseltmesi** (seviye 2-3 görselleri) ve **villa için 2 yeni görünüm**.
+- **Kiracılar (10):** işçi (Sanayi ve Eski Çarşı, olumsuz etkiyi az hisseder), girişimci, doktor, turist (yalnız Sahil, kısa ve pahalı). Portreler `img/ui/kiraci-*.png`.
+- **Hikayeler: 20** (13 yeni). Hikaye artık yalnız istenen binalardan en az biri açılmışsa başlar.
+- **Ziyaretçiler** (`VISITORS`; `visitorTick/visitorCheck/greetVisitor`): 3. seviyeden sonra ara sıra turist, belediye müfettişi ya da gazeteci bir binanın üstünde belirir (portre balonu). İstek: farklı dükkan/simge sayısı, memnun kiracı oranı, ya da yüksek konum bonuslu ev. Ödül para/elmas/XP; gazeteci mahalle endeksini 1 gün +10 yapar (`MARKET_EVENTS` içinde `haber`). 4 oyun saati bekler.
+- **Haftalık hedefler** (`WEEKLY_GOALS`, ISO hafta): 3 büyük hedef, her biri 4 elmas, üçü +8. Günlük hedefler penceresinin altında.
+- **Mevsimler** (`SEASONS`): gerçek takvime göre (Menü'den test için seçilebilir). Kış: kar zemin, karlı çam, çıplak ağaçlar, donmuş nehir kıyısı, kar yağışı; hamam/kafe geliri artar, sahil kirası -%10. Sonbahar: sararmış çayır, turuncu ağaçlar, düşen yapraklar; kafe/sinema/market geliri artar. İlkbahar: süslemelerin etkisi +%30, uçuşan çiçek yaprakları. Yaz: sahil kirası +%20, otel/lokanta/güneş santrali geliri artar. Üst göstergede mevsim düğmesi.
+- Testler: 47 (6 yeni).
+
+**Sıradaki fikirler:** mahalle festivalleri (kısa süreli ödüllü olaylar), yeni konutların yükseltme seviyeleri, bina görsellerinin WebP'ye çevrilmesi (APK boyutu).

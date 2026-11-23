@@ -406,7 +406,8 @@ test('kiracı hikayesi: iki memnun yenilemeden sonra istek gelir, karşılanınc
   G.signContract(s, id, 'renew');
   rentCycle(s, id, () => 0.5); // 0.5 < storyChance: hikaye başlar (koleksiyon şansı 0.12 değil)
   assert.ok(h.story, 'hikaye başladı');
-  assert.equal(G.storyOf(s, h).id, 'torun');
+  assert.ok(['torun', 'anilar'].includes(G.storyOf(s, h).id), 'emeklinin hikayelerinden biri');
+  h.story.id = 'torun'; // aşağıdaki adımlar parkla karşılanan hikayeyi dener
   assert.ok(G.storyMet(s, h), 'park zaten yakında');
   assert.equal(G.build(s, 'nadir-cinar', AX + 1, 6).ok, false, 'nadir süsleme kilitli');
   assert.ok(G.completeStory(s, id).ok);
@@ -550,4 +551,98 @@ test('test modu para, elmas ve malları bitirmez', () => {
   assert.equal(s.money, 5);
   G.testSetLevel(s, 30);
   assert.equal(s.level, 30);
+});
+
+// ---------- 2. aşama ----------
+
+test('mevsim: takvime göre, elle seçilebilir; mevsim süsü yalnız kendi mevsiminde kurulur', () => {
+  const s = rich();
+  assert.equal(G.currentSeason({}, new Date(2026, 0, 10)), 'kis');
+  assert.equal(G.currentSeason({}, new Date(2026, 6, 10)), 'yaz');
+  G.setSeasonOverride(s, 'yaz');
+  assert.equal(G.season(), 'yaz');
+  assert.equal(G.build(s, 'mevsim-kardan', AX + 1, 5).ok, false);
+  G.setSeasonOverride(s, 'kis');
+  assert.ok(G.build(s, 'mevsim-kardan', AX + 1, 5).ok);
+  // kışın hamam daha çok kazanır
+  const kis = G.incomePerHour('hamam');
+  G.setSeasonOverride(s, 'yaz');
+  assert.ok(kis > G.incomePerHour('hamam'));
+  G.setSeasonOverride(s, null);
+});
+
+test('ilkbaharda süslemelerin etkisi artar', () => {
+  const s = rich();
+  G.setSeasonOverride(s, 'yaz');
+  const { id } = G.build(s, 'ev', AX + 1, 5);
+  G.build(s, 'dekor-cardak', AX + 2, 5);
+  const yaz = G.bonusAt(s, AX + 1, 5).total;
+  G.setSeasonOverride(s, 'ilkbahar');
+  assert.ok(G.bonusAt(s, AX + 1, 5).total > yaz);
+  G.setSeasonOverride(s, null);
+  assert.ok(id);
+});
+
+test('geri dönüşüm tesisi ve işçi olumsuz etkiyi azaltır; konak Eski Çarşı bonusu alır', () => {
+  const s = rich();
+  G.setSeasonOverride(s, 'yaz');
+  G.build(s, 'konak', AX + 1, 5);
+  assert.ok(G.bonusAt(s, AX + 1, 5).parts.some(p => p.type === 'mahalle' && p.value === 15));
+  G.build(s, 'atolye', AX + 2, 5);
+  const once = G.bonusAt(s, AX + 1, 5).total;
+  const isci = G.bonusAt(s, AX + 1, 5, 'isci').total;
+  assert.ok(isci > G.bonusAt(s, AX + 1, 5, 'aile').total, 'işçi atölyeden az etkilenir');
+  G.build(s, 'geri-donusum', AX + 1, 6);
+  assert.ok(G.bonusAt(s, AX + 1, 5).total > once, 'tesis olumsuz etkiyi yarıya indirir');
+  G.setSeasonOverride(s, null);
+});
+
+test('yalı yalnız deniz kıyısına kurulur; turist yalnız Sahilde gelir', () => {
+  const s = rich();
+  const r = G.build(s, 'yali', AX + 1, 5);
+  assert.equal(r.ok, false);
+  assert.match(r.msg, /deniz kenarına/);
+  assert.ok(!G.availableTenants(s, 'ev').includes('turist'));
+  assert.ok(G.availableTenants(s, 'ev').includes('isci'));
+});
+
+test('ziyaretçi gelir, isteği karşılanınca ödül verir', () => {
+  const s = rich();
+  s.market.nextEventAt = Infinity;
+  for (let i = 0; i < 4; i++) G.build(s, ['kafe', 'market', 'berber', 'eczane'][i], AX + 1, 4 + i);
+  G.advance(s, 2 * G.HOUR, () => 0); // ilk çağrıda ziyaretçi 1 saat sonraya planlanır
+  G.advance(s, 2 * G.HOUR, () => 0); // rng 0: ilk tür (turist)
+  assert.ok(s.visitor, 'ziyaretçi geldi');
+  assert.equal(s.visitor.type, 'turist');
+  assert.ok(G.visitorHere(s));
+  const c = G.visitorCheck(s);
+  assert.equal(c.have, 4);
+  s.visitor.n = 4;
+  const m = s.money;
+  assert.ok(G.greetVisitor(s).ok);
+  assert.ok(s.money > m);
+  assert.equal(s.visitor, null);
+  assert.equal(s.stats.visitorsHappy, 1);
+  // isteği karşılanmayan ziyaretçi süre dolunca gider
+  G.advance(s, 4 * G.HOUR, () => 0.99);
+  assert.ok(s.visitor);
+  s.visitor.n = 99;
+  assert.equal(G.greetVisitor(s).ok, false);
+  G.advance(s, 5 * G.HOUR, () => 0.99);
+  assert.ok(!s.visitor || s.visitor.n !== 99);
+});
+
+test('haftalık hedefler: haftada 3 hedef, ilerleme ve elmas', () => {
+  const s = rich();
+  assert.equal(G.weekKey(new Date(2026, 10, 23)), '2026-W48');
+  const w = G.ensureWeekly(s, '2026-W48');
+  assert.equal(w.goals.length, 3);
+  assert.equal(G.ensureWeekly(s, '2026-W48'), w);
+  const g = w.goals[0];
+  const stat = { kira: 'rentsCollected', kontrat: 'contractsSigned', insa: 'built', mal: 'goodsSold', hikaye: 'storiesDone', ziyaret: 'visitorsHappy' }[g.id];
+  assert.equal(G.claimWeekly(s, 0).ok, false);
+  s.stats[stat] += g.n;
+  const d = s.diamonds;
+  assert.ok(G.claimWeekly(s, 0).ok);
+  assert.equal(s.diamonds, d + CONFIG.weeklyDiamonds);
 });

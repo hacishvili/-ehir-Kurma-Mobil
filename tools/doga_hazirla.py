@@ -22,9 +22,14 @@ from gorsel_hazirla import remove_background  # noqa: E402
 TEXTURES = {  # ad: (doygunluk, parlaklık, renk tonu kaydırma [r, g, b])
     'cim': (0.78, 0.86, (-26, -2, 0)),
     'yabani': (1.05, 1.38, (0, 8, 0)),
+    'kar': (0.9, 1.0, (0, 0, 0)),
+    'sonbahar': (0.72, 0.98, (0, 4, 0)),
 }
 SPRITES = {'mese': 40, 'kuknar': 40, 'kavak': 40, 'yaprakli': 40, 'cali': 30, 'camlar': 40,
-           'cicekler': 30, 'kaya': 40}
+           'cicekler': 30, 'kaya': 40,
+           # mevsim görünümleri (karlı dallar beyaz olduğu için kar ağaçlarında tolerans düşük)
+           'kuknar-kar': 14, 'camlar-kar': 14, 'yaprakli-sonbahar': 40, 'mese-sonbahar': 40,
+           'kavak-sonbahar': 40, 'mese-kis': 30}
 
 
 def seamless(im):
@@ -72,8 +77,14 @@ def sprite(name, tol):
             r, g, b, a = px[x, y]
             if not a or name == 'kaya':
                 continue
+            if name.endswith('-kar') or name == 'mese-kis':
+                # karlı ağaç: yalnız dipteki gölgeyi sil (gövdeye dokunma); çıplak meşede dallar arası beyaz boşluk
+                sat, hi = max(r, g, b) - min(r, g, b), max(r, g, b)
+                if (y > h * 0.86 and not (r > g + 12)) or (name == 'mese-kis' and min(r, g, b) > 228):
+                    px[x, y] = (r, g, b, 0)
+                continue
             sat, hi = max(r, g, b) - min(r, g, b), max(r, g, b)
-            base = name in ('mese', 'kuknar', 'kavak', 'yaprakli', 'camlar') and y > h * 0.84 and not (r > g + 12 and hi < 200)
+            base = name.split('-')[0] in ('mese', 'kuknar', 'kavak', 'yaprakli', 'camlar') and not name.endswith('-kar') and name != 'mese-kis' and y > h * 0.84 and not (r > g + 12 and hi < 200)
             halo = y > h * 0.66 and hi > 165 and sat < 60
             if base or halo or (sat < 18 and hi > 150) or (y > h * 0.8 and (sat < 32 or hi > 185)):
                 px[x, y] = (r, g, b, 0)

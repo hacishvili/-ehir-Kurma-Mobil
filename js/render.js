@@ -1,5 +1,5 @@
 // İzometrik şehir çizimi (Canvas 2D). Oyun mantığını değiştirmez, yalnız okur.
-import { CONFIG, BUILDINGS, TENANTS, TERRAIN, UPGRADES, VARIANTS, RESOURCES } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, TERRAIN, UPGRADES, VARIANTS, RESOURCES, VISITORS } from './data.js';
 import * as G from './game.js';
 
 export const TW = 64; // kare genişliği
@@ -36,6 +36,13 @@ export const NATURE = {
   cicekler: { w: 0.48, sway: 0, weight: 6 },
 };
 const NATURE_TOTAL = Object.values(NATURE).reduce((a, n) => a + n.weight, 0);
+// Mevsime göre ağaç görünümü: tür → img/doga/<görsel>. null: o mevsimde çizilmez
+const SEASON_TREES = {
+  kis: { kuknar: 'kuknar-kar', camlar: 'camlar-kar', yaprakli: 'mese-kis', mese: 'mese-kis', kavak: 'kuknar-kar', cicekler: null },
+  sonbahar: { yaprakli: 'yaprakli-sonbahar', mese: 'mese-sonbahar', kavak: 'kavak-sonbahar' },
+};
+// Mevsime göre zemin: [açık arsa çimi, harita dışı çayır]
+const SEASON_GROUND = { kis: ['kar', 'kar'], sonbahar: ['cim', 'sonbahar'], ilkbahar: ['cim', 'yabani'], yaz: ['cim', 'yabani'] };
 const WATER_EDGE = new Set(['deniz', 'kiyi', 'nehir', 'kum']); // harita dışına da uzanan zeminler
 const RING = 12; // harita dışında ağaç dikilen kuşak (kare)
 
@@ -78,12 +85,19 @@ export function loadSprites(onLoad = () => {}) {
     img.src = `${SPRITE_DIR}${ter.sprite}.png`;
   }
   // doğa: zemin dokuları ve ağaçlar
-  for (const tex of ['cim', 'yabani']) {
+  for (const tex of ['cim', 'yabani', 'kar', 'sonbahar']) {
     const img = new Image();
     img.onload = () => { sprites[`doku-${tex}`] = img; };
     img.src = `img/doga/${tex}.jpg`;
   }
-  for (const name of Object.keys(NATURE)) {
+  const natureNames = new Set(Object.keys(NATURE));
+  for (const m of Object.values(SEASON_TREES)) for (const v of Object.values(m)) if (v) natureNames.add(v);
+  for (const v of Object.values(VISITORS)) {
+    const img = new Image();
+    img.onload = () => { sprites[v.portrait] = img; };
+    img.src = `img/ui/${v.portrait}.png`;
+  }
+  for (const name of natureNames) {
     const img = new Image();
     img.onload = () => { sprites[`doga-${name}`] = img; };
     img.src = `img/doga/${name}.png`;
@@ -243,7 +257,7 @@ export function createRenderer(canvas) {
   // Harita dışı: yabani çayır, uzanan su ve cadde
   function drawOutside() {
     const n = CONFIG.gridSize;
-    const wild = texture('yabani', 2.6);
+    const wild = texture(SEASON_GROUND[G.season()][1], 2.6) || texture('yabani', 2.6);
     ctx.fillStyle = wild || '#5d8a3c';
     ctx.fillRect(0, 0, W, H);
     // geniş açık-koyu lekeler: çayır tek düze görünmesin
@@ -317,7 +331,8 @@ export function createRenderer(canvas) {
   function drawGround(s, view) {
     const n = CONFIG.gridSize;
     // açık arsaların çimi tek parça çizilir (kareler arasında çizgi kalmaz)
-    const lawn = texture('cim', 2.2);
+    const lawnName = SEASON_GROUND[G.season()][0];
+    const lawn = texture(lawnName, lawnName === 'kar' ? 2.6 : 2.2) || texture('cim', 2.2);
     ctx.beginPath();
     for (let y = 0; y < n; y++) {
       for (let x = 0; x < n; x++) {
@@ -330,6 +345,8 @@ export function createRenderer(canvas) {
     }
     ctx.fillStyle = lawn || GROUND.grassA;
     ctx.fill();
+    // sonbaharda çim biraz sararır
+    if (G.season() === 'sonbahar') { ctx.fillStyle = 'rgba(190,130,30,0.16)'; ctx.fill(); }
     seaFill((x, y) => G.terrainAt(x, y) === 'deniz', { x0: 0, x1: n - 1, y0: 0, y1: n - 1 });
     // kilitli arsalarda ayrıca biraz koyu yabani çayır (yükü doku zaten taşıyor)
     for (let y = 0; y < n; y++) {
@@ -349,6 +366,8 @@ export function createRenderer(canvas) {
         else if (road) fill = !G.isRoadConnected(s, x, y) ? GROUND.roadOff : road === 'yol-tas' ? GROUND.cobble : GROUND.road;
         if (terImg) {
           drawTile(x, y, terImg);
+          // kışın nehir kıyısı ve tepeler karla örtülür
+          if (G.season() === 'kis' && (ter === 'nehir' || ter === 'tepe' || bridge)) poly(d.pts, 'rgba(240,246,255,0.55)');
           if (!unlocked) poly(d.pts, 'rgba(25,45,20,0.32)');
           else if (ter === 'tepe' && !b) poly(d.pts, null, 'rgba(40,70,30,0.12)');
         }
@@ -615,6 +634,29 @@ export function createRenderer(canvas) {
     if (!(icon instanceof Image)) ctx.fillText(icon, cx, cy + 1);
   }
 
+  // Ziyaretçi: binanın üstünde zıplayan büyük portre ve küçük işaret
+  let visitorSpot = null; // dokunma için son çizilen ziyaretçi balonu
+  function drawVisitor(s, t) {
+    const v = G.visitorHere(s);
+    visitorSpot = null;
+    if (!v) return;
+    const b = v.building;
+    const n = G.sizeOf(b);
+    const [sx, sy] = toScreen(b.x + n / 2, b.y + n / 2);
+    const top = sy - buildingTop(b) - 30 * Math.max(0.8, cam.z) - Math.abs(Math.sin(t / 300)) * 6 * cam.z;
+    ctx.save();
+    ctx.translate(sx, top);
+    ctx.scale(1.5, 1.5);
+    bubble(0, 0, sprites[v.def.portrait] || v.def.icon, null, null, '#fff6d6');
+    ctx.restore();
+    const r = 11 * Math.max(0.8, cam.z) * 1.5;
+    visitorSpot = { x: sx, y: top, r: r + 8 };
+    ctx.save();
+    ctx.translate(sx + r * 0.8, top - r * 0.8);
+    bubble(0, 0, G.visitorCheck(s)?.met ? '✅' : '❕', null, null, '#ffffff');
+    ctx.restore();
+  }
+
   function satColor(v) {
     if (v >= CONFIG.satHappy) return '#2fbf71';
     if (v >= 40) return '#f2b134';
@@ -695,7 +737,9 @@ export function createRenderer(canvas) {
           const fy = y + 0.2 + hash(x, y, 5 + k) * 0.6;
           let pick = hash(x, y, 13 + k) * NATURE_TOTAL, kind = 'kuknar';
           for (const [name, nd] of Object.entries(NATURE)) { pick -= nd.weight; if (pick < 0) { kind = name; break; } }
-          const img = sprites[`doga-${kind}`];
+          const alt = SEASON_TREES[G.season()]?.[kind];
+          if (alt === null) continue;
+          const img = sprites[`doga-${alt || kind}`] || sprites[`doga-${kind}`];
           if (!img) continue;
           const size = (0.62 + hash(x, y, 9 + k) * 0.35) * (inMap ? 0.85 : 1);
           const [sx, sy] = toScreen(fx, fy);
@@ -735,7 +779,7 @@ export function createRenderer(canvas) {
   // gelince yeniden çizilir. back: haritanın arkası, front: haritanın önündeki ağaçlar.
   const scenery = { back: document.createElement('canvas'), front: document.createElement('canvas'), key: '', at: 0 };
   function sceneryKey() {
-    return `${G.activeHood().name}|${W}|${H}|${Object.keys(sprites).length}`;
+    return `${G.activeHood().name}|${G.season()}|${W}|${H}|${Object.keys(sprites).length}`;
   }
   function renderScenery(s, now) {
     const M = Math.round(Math.max(W, H) * 0.22);
@@ -820,6 +864,7 @@ export function createRenderer(canvas) {
     drawParcels(s, true); // fiyat etiketleri ağaçların üstünde kalsın
 
     if (!pl) for (const it of items) drawStatus(s, it.b, t);
+    if (!pl) drawVisitor(s, t);
 
     if (pl && !G.isRoadType(pl.type)) drawPlacementPreview(s, pl);
 
@@ -862,5 +907,6 @@ export function createRenderer(canvas) {
   return {
     cam, ctx, resize, draw, screenToTile, centerOn, zoomAt, pan, toScreen, poly, buildingTop, fitZoom,
     get size() { return { W, H }; },
+    hitVisitor(x, y) { return !!visitorSpot && Math.hypot(x - visitorSpot.x, y - visitorSpot.y) <= visitorSpot.r; },
   };
 }

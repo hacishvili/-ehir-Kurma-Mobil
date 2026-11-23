@@ -67,6 +67,12 @@ export const CONFIG = {
 
   // Günlük hedefler
   dailyCount: 3,
+  weeklyCount: 3,
+  weeklyDiamonds: 4,       // her haftalık hedef
+  weeklyBonusDiamonds: 8,  // üçü de bitince
+  visitorEveryHours: 3,    // bir ziyaretçi gittikten sonra yenisi (oyun saati)
+  visitorStayHours: 4,     // ziyaretçi bu kadar bekler
+  visitorMinLevel: 3,
   dailyDiamonds: 1,        // her hedef
   dailyBonusDiamonds: 2,   // üçü birden tamamlanınca
 
@@ -339,6 +345,122 @@ export const BUILDINGS = {
     produce: { inputs: { kereste: 3, plastik: 1, cam: 1 }, outputs: { mobilya: 1 }, minutes: 2.6 },
     effect: { radius: 2, all: -3 } },
 
+  // ---- 2. aşama: konut ----
+  // hoodBonus: o mahallede kiraya ek yüzde. needsNear: yalnız bu zeminlere yakın kurulur.
+  // resist: çevredeki olumsuz etkilerin yalnız yarısını hisseder.
+  konak: {
+    name: 'Tarihi Konak', cat: 'konut', icon: '🏚️', cost: 1800, unlock: 5,
+    rentPerHour: 680, height: 24, hoodBonus: { eski: 15 },
+  },
+  ciftlik: {
+    name: 'Çiftlik Evi', cat: 'konut', icon: '🐓', cost: 600, unlock: 4,
+    rentPerHour: 250, height: 18, hoodBonus: { tepe: 20, eski: 8 },
+  },
+  lojman: {
+    name: 'İşçi Lojmanı', cat: 'konut', icon: '🧱', cost: 1400, unlock: 6,
+    rentPerHour: 500, height: 34, resist: true, hoodBonus: { sanayi: 20 },
+  },
+  yali: {
+    name: 'Yalı', cat: 'konut', icon: '🌊', cost: 7000, unlock: 9,
+    rentPerHour: 2300, height: 30, needsNear: { terrain: ['deniz', 'kiyi'], radius: 2 },
+  },
+
+  // ---- 2. aşama: ticari ----
+  berber: {
+    name: 'Berber', cat: 'ticari', icon: '💈', cost: 500, unlock: 2,
+    incomePerHour: 40, height: 16,
+    effect: { radius: 1, all: 3, tenants: { genc: 4, girisimci: 4 } },
+  },
+  lokanta: {
+    name: 'Lokanta', cat: 'ticari', icon: '🍲', cost: 1300, unlock: 4,
+    incomePerHour: 110, height: 18,
+    effect: { radius: 2, all: 5, tenants: { aile: 6, isci: 10, turist: 6 } },
+  },
+  butik: {
+    name: 'Butik', cat: 'ticari', icon: '👗', cost: 2800, unlock: 8,
+    incomePerHour: 240, height: 20,
+    effect: { radius: 2, all: 4, tenants: { unlu: 6, genc: 4 } },
+  },
+  sinema: {
+    name: 'Sinema', cat: 'ticari', icon: '🎬', cost: 3800, unlock: 9,
+    incomePerHour: 300, height: 22,
+    effect: { radius: 2, all: 6, tenants: { ogrenci: 10, genc: 8, sanatci: 6 } },
+  },
+
+  // ---- 2. aşama: kamu ----
+  postane: {
+    name: 'Postane', cat: 'kamu', icon: '📮', cost: 1200, unlock: 3,
+    height: 18,
+    effect: { radius: 2, all: 3, tenants: { girisimci: 8, emekli: 4 } },
+  },
+  karakol: {
+    name: 'Karakol', cat: 'kamu', icon: '🚓', cost: 2200, unlock: 6,
+    height: 20,
+    effect: { radius: 3, all: 5, tenants: { aile: 6, emekli: 6, doktor: 4 } },
+  },
+  itfaiye: {
+    name: 'İtfaiye', cat: 'kamu', icon: '🚒', cost: 2600, unlock: 7,
+    height: 26,
+    effect: { radius: 3, all: 6, tenants: { aile: 6 } },
+  },
+
+  // ---- 2. aşama: sanayi ----
+  // cleanse: çevresindeki olumsuz etkileri bu oranda azaltır
+  'geri-donusum': {
+    name: 'Geri Dönüşüm Tesisi', cat: 'sanayi', icon: '♻️', cost: 2800, unlock: 9,
+    incomePerHour: 450, height: 18, cleanse: { radius: 2, factor: 0.5 },
+    effect: { radius: 1, all: -2 },
+  },
+  gunes: {
+    name: 'Güneş Santrali', cat: 'sanayi', icon: '☀️', cost: 4500, unlock: 11,
+    incomePerHour: 720, height: 10,
+    effect: { radius: 1, all: 1 },
+  },
+
+  // ---- 2. aşama: simge ----
+  'deniz-feneri': {
+    name: 'Deniz Feneri', cat: 'simge', icon: '🗼', cost: 9000, unlock: 10, height: 50,
+    needsNear: { terrain: ['deniz', 'kiyi', 'kum'], radius: 2 },
+    effect: { radius: 4, all: 10, tenants: { turist: 12, sanatci: 6 } },
+  },
+  muze: {
+    name: 'Müze', cat: 'simge', icon: '🏛️', cost: 11000, unlock: 12, height: 34,
+    effect: { radius: 4, all: 10, tenants: { sanatci: 10, ogrenci: 6, turist: 8 } },
+  },
+  kultur: {
+    name: 'Kültür Merkezi', cat: 'simge', icon: '🎭', cost: 16000, unlock: 15, height: 30,
+    effect: { radius: 5, all: 12, tenants: { sanatci: 10, unlu: 8 } },
+  },
+
+  // ---- 2. aşama: süsleme ----
+  'agac-servi': { name: 'Servi Ağaçları', cat: 'dekor', icon: '🌲', cost: 160, unlock: 2, height: 30,
+    effect: { radius: 1, all: 3, tenants: { emekli: 2 } } },
+  'agac-sogut': { name: 'Söğüt ve Gölet', cat: 'dekor', icon: '🌿', cost: 260, unlock: 5, height: 24,
+    sparkle: { h: 2, spread: 0.12 },
+    effect: { radius: 1, all: 4, tenants: { aile: 2, sanatci: 3 } } },
+  'dekor-bayrak': { name: 'Bayrak Direği', cat: 'dekor', icon: '🚩', cost: 200, unlock: 3, height: 34,
+    effect: { radius: 1, all: 3 } },
+  'dekor-cardak': { name: 'Çardak', cat: 'dekor', icon: '⛺', cost: 450, unlock: 5, height: 16,
+    effect: { radius: 1, all: 4, tenants: { aile: 3, emekli: 3 } } },
+  'dekor-otobus': { name: 'Otobüs Durağı', cat: 'dekor', icon: '🚏', cost: 300, unlock: 4, height: 12,
+    effect: { radius: 2, all: 3, tenants: { ogrenci: 4, isci: 6, genc: 2 } } },
+  'dekor-bisiklet': { name: 'Bisiklet Parkı', cat: 'dekor', icon: '🚲', cost: 250, unlock: 3, height: 12,
+    effect: { radius: 1, all: 3, tenants: { ogrenci: 4, genc: 3, girisimci: 2 } } },
+  'dekor-sebil': { name: 'Tarihi Sebil', cat: 'dekor', icon: '⛲', cost: 800, unlock: 7, height: 16,
+    effect: { radius: 2, all: 5, tenants: { turist: 6, emekli: 4 } } },
+
+  // ---- Mevsim süsleri: yalnız kendi mevsiminde kurulur (season) ----
+  'mevsim-kardan': { name: 'Kardan Adam', cat: 'dekor', icon: '⛄', cost: 300, unlock: 1, height: 14, season: 'kis',
+    effect: { radius: 2, all: 5, tenants: { aile: 6 } } },
+  'mevsim-yilbasi': { name: 'Yılbaşı Ağacı', cat: 'dekor', icon: '🎄', cost: 600, unlock: 1, height: 30, season: 'kis',
+    effect: { radius: 2, all: 7 } },
+  'mevsim-lale': { name: 'Lale Bahçesi', cat: 'dekor', icon: '🌷', cost: 350, unlock: 1, height: 8, season: 'ilkbahar',
+    effect: { radius: 2, all: 6, tenants: { emekli: 4, unlu: 4 } } },
+  'mevsim-dondurma': { name: 'Dondurma Arabası', cat: 'dekor', icon: '🍦', cost: 350, unlock: 1, height: 14, season: 'yaz',
+    effect: { radius: 2, all: 5, tenants: { ogrenci: 6, turist: 6 } } },
+  'mevsim-balkabagi': { name: 'Hasat Köşesi', cat: 'dekor', icon: '🎃', cost: 350, unlock: 1, height: 12, season: 'sonbahar',
+    effect: { radius: 2, all: 5, tenants: { aile: 4, sanatci: 4 } } },
+
   gokdelen: {
     name: 'Gökdelen', cat: 'simge', icon: '🗼', cost: 20000, unlock: 16,
     height: 80,
@@ -378,6 +500,18 @@ export const MATS = {
   saatkulesi: { cimento: 60, celik: 10 },
   stadyum: { celik: 100, cimento: 100 },
   fabrika: { celik: 40 },
+  konak: { kereste: 30 },
+  lojman: { cimento: 15, kereste: 10 },
+  yali: { kereste: 40, cam: 20, mobilya: 4 },
+  sinema: { cimento: 20, cam: 15 },
+  butik: { cam: 15 },
+  itfaiye: { cimento: 20, celik: 5 },
+  karakol: { cimento: 15 },
+  'geri-donusum': { celik: 15, cimento: 10 },
+  gunes: { cam: 40, celik: 15 },
+  'deniz-feneri': { cimento: 40, cam: 10 },
+  muze: { cimento: 60, cam: 20 },
+  kultur: { celik: 50, cam: 60, mobilya: 6 },
   lojistik: { celik: 20, cimento: 20 },
   cimento: { kereste: 15 },
   'cam-fabrikasi': { kereste: 15 },
@@ -396,11 +530,13 @@ export const UPGRADES = {
   villa: [{ cost: 1.5, mats: { cimento: 30, cam: 25 }, mult: 1.6 }, { cost: 3, mats: { celik: 40, cam: 40, mobilya: 8 }, mult: 2.5 }],
   kafe: [{ cost: 1.5, mats: { kereste: 15, cimento: 10 }, mult: 1.7 }, { cost: 3, mats: { cam: 20, mobilya: 3, ekmek: 20 }, mult: 2.6 }],
   market: [{ cost: 1.5, mats: { kereste: 20, cam: 10 }, mult: 1.7 }, { cost: 3, mats: { celik: 20, cam: 20, ekmek: 30 }, mult: 2.6 }],
+  rezidans: [{ cost: 1.5, mats: { celik: 40, cam: 40 }, mult: 1.6 }, { cost: 3, mats: { celik: 80, cam: 80, mobilya: 12 }, mult: 2.5 }],
 };
 
 // Aynı binanın farklı görünümleri: kurarken rastgele biri gelir (seviye 1'de)
 export const VARIANTS = {
   ev: ['ev', 'ev-b', 'ev-c'],
+  villa: ['villa', 'villa-b', 'villa-c'],
   apartman: ['apartman', 'apartman-b', 'apartman-c'],
 };
 
@@ -537,6 +673,24 @@ export const TENANTS = {
     houses: ['villa', 'rezidans'], // yalnız bu evlere gelir
     likes: ['gokdelen', 'saatkulesi', 'dekor-heykel'], dislikes: ['atolye', 'fabrika', 'lojistik', 'stadyum'],
   },
+  // ---- 2. aşama ----
+  // hoods: yalnız bu mahallelerde gelir. tough: olumsuz etkileri az hisseder (çarpan)
+  isci: {
+    name: 'İşçi', icon: '👷', durations: [120, 240, 480], rentMult: 0.9, unlock: 6, hoods: ['sanayi', 'eski'], tough: 0.4,
+    likes: ['lokanta', 'dekor-otobus', 'market'], dislikes: [],
+  },
+  girisimci: {
+    name: 'Girişimci', icon: '🚀', durations: [60, 180, 360], rentMult: 1.4, unlock: 7,
+    likes: ['banka', 'postane', 'metro', 'berber'], dislikes: ['atolye', 'gece'],
+  },
+  doktor: {
+    name: 'Doktor', icon: '🩺', durations: [240, 480, 720], rentMult: 1.6, unlock: 8,
+    likes: ['hastane', 'eczane', 'karakol'], dislikes: ['gece', 'fabrika', 'stadyum'],
+  },
+  turist: {
+    name: 'Turist', icon: '🧳', durations: [15, 30, 60], rentMult: 1.9, unlock: 8, hoods: ['sahil'],
+    likes: ['deniz-feneri', 'lokanta', 'cay-bahcesi', 'dekor-sebil'], dislikes: ['fabrika', 'lojistik', 'atolye'],
+  },
 };
 
 // Piyasa olayları: effect endeks hedefine eklenir, hours kadar sürer. hoods verilirse yalnız oralarda olur.
@@ -552,6 +706,8 @@ export const MARKET_EVENTS = [
   { id: 'sel', text: 'Nehir taştı, sel uyarısı', effect: -10, hours: 36, hoods: ['eski'] },
   { id: 'kirlilik', text: 'Hava kirliliği şikayetleri arttı', effect: -8, hours: 36, hoods: ['sanayi', 'is'] },
   { id: 'yol', text: 'Uzun süren yol çalışması', effect: -6, hours: 24 },
+  // yalnız gazeteci ziyaretinden sonra gelir (hoods boş: rastgele çıkmaz)
+  { id: 'haber', text: 'Gazetede şehrin hakkında güzel bir haber çıktı', effect: 10, hours: 24, hoods: [] },
 ];
 
 // Kiracı hikayeleri: aynı kiracı en az storyAfterRenewals kez memnun yeniler ise bir istek getirir.
@@ -572,7 +728,75 @@ export const STORIES = [
     request: { kind: 'pay', amount: 400 }, reward: { diamonds: 3, money: 0 } },
   { id: 'basin', tenants: ['unlu'], title: 'Basın toplantısı', text: 'Fotoğraflarda arkada bir simge yapı görünsün: saat kulesi ya da gökdelen.',
     request: { kind: 'near', types: ['saatkulesi', 'gokdelen'] }, reward: { unlock: 'nadir-gul', diamonds: 5 } },
+  // ---- 2. aşama ----
+  { id: 'ihtisas', tenants: ['doktor'], title: 'Uzmanlığımı bitirdim', text: 'Artık uzman hekimim! Hastaneye ya da bir eczaneye yakın oturmak işimi kolaylaştırır.',
+    request: { kind: 'near', types: ['hastane', 'eczane'] }, reward: { diamonds: 3, money: 1000 } },
+  { id: 'nobet', tenants: ['doktor'], title: 'Nöbetten yorgun dönüyorum', text: 'Uyuyabileceğim huzurlu, güzel bir çevre istiyorum (konum bonusu en az %20).',
+    request: { kind: 'bonus', min: 20 }, reward: { diamonds: 3 } },
+  { id: 'yatirim', tenants: ['girisimci'], title: 'Yatırımcı buldum!', text: 'Şirketim büyüyor. Yakında bir banka ya da postane olursa çok iyi olur.',
+    request: { kind: 'near', types: ['banka', 'postane'] }, reward: { unlock: 'nadir-saat', diamonds: 2 } },
+  { id: 'lansman', tenants: ['girisimci'], title: 'Ürün tanıtımı', text: 'Tanıtım gecesi düzenliyorum. Sponsor olur musun? Herkes senin şehrini konuşacak.',
+    request: { kind: 'pay', amount: 3000 }, reward: { diamonds: 5 } },
+  { id: 'tatil', tenants: ['turist'], title: 'Tatil fotoğrafı', text: 'Eve dönünce gösterecek bir manzara istiyorum: yakında deniz feneri ya da tarihi sebil.',
+    request: { kind: 'near', types: ['deniz-feneri', 'dekor-sebil'] }, reward: { diamonds: 3 } },
+  { id: 'kartpostal', tenants: ['turist'], title: 'Kartpostal gibi', text: 'Buraya bayıldım! Evin çevresi kartpostal gibi olsun (konum bonusu en az %20).',
+    request: { kind: 'bonus', min: 20 }, reward: { money: 1500 } },
+  { id: 'mesai', tenants: ['isci'], title: 'Sabah mesaisi', text: 'Fabrikaya çok erken gidiyorum. Yakına bir otobüs durağı ya da metro yapar mısın?',
+    request: { kind: 'near', types: ['dekor-otobus', 'metro'] }, reward: { diamonds: 2, money: 600 } },
+  { id: 'usta', tenants: ['isci'], title: 'Ustabaşı oldum!', text: 'Terfi aldım! Mahallede küçük bir kutlama yapalım mı?',
+    request: { kind: 'pay', amount: 800 }, reward: { diamonds: 3 } },
+  { id: 'konser', tenants: ['sanatci'], title: 'İlk konserim', text: 'Sahneye çıkacağım! Yakında bir sinema ya da kültür merkezi olsun.',
+    request: { kind: 'near', types: ['sinema', 'kultur'] }, reward: { diamonds: 4 } },
+  { id: 'anilar', tenants: ['emekli'], title: 'Anılarımı yazıyorum', text: 'Sessizce yazabileceğim bir yer lazım: yakına bir kütüphane ya da çardak.',
+    request: { kind: 'near', types: ['kutuphane', 'dekor-cardak'] }, reward: { unlock: 'nadir-gul', diamonds: 2 } },
+  { id: 'gezi', tenants: ['aile'], title: 'Okul gezisi', text: 'Çocuklar müzeye gitmek istiyor. Yakında bir müze ya da kütüphane olsa ne güzel olur.',
+    request: { kind: 'near', types: ['muze', 'kutuphane'] }, reward: { diamonds: 3 } },
+  { id: 'sinav', tenants: ['ogrenci'], title: 'Final haftası', text: 'Sınavlara çalışacağım! Yakında kütüphane ya da kafe olsun.',
+    request: { kind: 'near', types: ['kutuphane', 'kafe'] }, reward: { money: 500, diamonds: 1 } },
+  { id: 'film', tenants: ['unlu'], title: 'Film galası', text: 'Yeni filmimin galası burada olsun: yakında bir sinema ya da kültür merkezi.',
+    request: { kind: 'near', types: ['sinema', 'kultur'] }, reward: { diamonds: 6 } },
 ];
+
+// Ziyaretçiler: ara sıra bir binanın önünde belirir, dokununca isteğini söyler.
+// check: ne istendiği (game.js visitorCheck), reward: karşılanınca verilen
+export const VISITORS = {
+  turist: { name: 'Turist', portrait: 'kiraci-turist', icon: '📸',
+    text: n => `Şehrini gezmeye geldim! Görecek en az ${n} farklı dükkan ya da simge yapı arıyorum.`,
+    n: lv => 3 + Math.floor(lv / 6), check: 'variety', reward: lv => ({ money: 150 * lv, xp: 20 }) },
+  mufettis: { name: 'Belediye müfettişi', portrait: 'ziyaretci-mufettis', icon: '📋',
+    text: n => `Belediyeden geliyorum. Kiracıların en az %${n}'i memnun mu, ona bakacağım. En az 3 kiracın olmalı.`,
+    n: lv => Math.min(80, 50 + lv), check: 'happy', reward: () => ({ diamonds: 3, xp: 30 }) },
+  gazeteci: { name: 'Gazeteci', portrait: 'ziyaretci-gazeteci', icon: '📰',
+    text: n => `Şehrin hakkında haber yapacağım. Bana konum bonusu en az %${n} olan bir ev göster.`,
+    n: lv => Math.min(40, 12 + lv), check: 'bonus', reward: lv => ({ money: 100 * lv, xp: 25, market: 10 }) },
+};
+
+// Haftalık hedefler: her hafta 3 tanesi seçilir; günlüklerden büyük, ödülü elmas
+export const WEEKLY_GOALS = [
+  { id: 'kira', text: n => `Bu hafta ${n} kira topla`, stat: 'rentsCollected', n: lv => 25 + 3 * lv },
+  { id: 'kontrat', text: n => `Bu hafta ${n} kontrat imzala`, stat: 'contractsSigned', n: lv => 20 + 2 * lv },
+  { id: 'insa', text: n => `Bu hafta ${n} bina kur`, stat: 'built', n: lv => 10 + lv },
+  { id: 'mal', text: n => `Bu hafta ${n} mal sat`, stat: 'goodsSold', n: lv => 100 + 20 * lv },
+  { id: 'hikaye', text: n => `Bu hafta ${n} kiracı hikayesini tamamla`, stat: 'storiesDone', n: () => 2 },
+  { id: 'ziyaret', text: n => `Bu hafta ${n} ziyaretçiyi memnun et`, stat: 'visitorsHappy', n: () => 3 },
+];
+
+// Mevsimler: gerçek takvime göre (Aralık-Şubat kış ...). Menüden test için seçilebilir.
+// rentHood: o mahalledeki evlere kira yüzdesi; income: tür başına gelir çarpanı; effectBoost: kategori etkisi çarpanı
+export const SEASONS = {
+  ilkbahar: { name: 'İlkbahar', icon: '🌸', months: [3, 4, 5],
+    text: 'Süslemelerin etkisi %30 fazla. Lale bahçesi kurulabilir.',
+    effectBoost: { dekor: 1.3 }, rentHood: {}, income: { 'cay-bahcesi': 1.2 } },
+  yaz: { name: 'Yaz', icon: '☀️', months: [6, 7, 8],
+    text: 'Sahil kiraları +%20, otel ve lokanta geliri +%20. Dondurma arabası kurulabilir.',
+    effectBoost: {}, rentHood: { sahil: 20 }, income: { otel: 1.2, lokanta: 1.2, gunes: 1.3 } },
+  sonbahar: { name: 'Sonbahar', icon: '🍂', months: [9, 10, 11],
+    text: 'Okul dönemi: kafe, kütüphane ve sinema daha çok kazanır. Hasat köşesi kurulabilir.',
+    effectBoost: {}, rentHood: {}, income: { kafe: 1.2, sinema: 1.2, market: 1.1 } },
+  kis: { name: 'Kış', icon: '❄️', months: [12, 1, 2],
+    text: 'Hamam ve kafe geliri artar, sahil kiraları %10 düşer. Kardan adam ve yılbaşı ağacı kurulabilir.',
+    effectBoost: {}, rentHood: { sahil: -10 }, income: { hamam: 1.3, kafe: 1.15, 'cay-bahcesi': 0.8, gunes: 0.7 } },
+};
 
 // Günlük hedefler: her gün bu listeden 3 tanesi seçilir. stat: sayaç (s.stats), n: seviyeye göre hedef
 export const DAILY_GOALS = [

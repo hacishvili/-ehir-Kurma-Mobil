@@ -283,6 +283,39 @@ export function createAmbient(R) {
 
   function drawOverlay(t) {
     for (const p of particles) drawParticle(p, t);
+    drawWeather(t);
+  }
+
+  // ---------- Mevsim: ekranda süzülen kar, yaprak ya da çiçek yaprağı ----------
+  const flakes = [];
+  let lastWeatherT = 0;
+  let weatherSeason = null;
+  const WEATHER = {
+    kis: { n: 70, colors: ['rgba(255,255,255,0.9)', 'rgba(235,245,255,0.85)'], speed: 34, size: [1.6, 3.4], sway: 18, leaf: false },
+    sonbahar: { n: 22, colors: ['#e0782b', '#c9452c', '#e8b23a', '#a0522d'], speed: 40, size: [3, 5], sway: 40, leaf: true },
+    ilkbahar: { n: 18, colors: ['#ffd1e1', '#ffffff', '#ffb3cc'], speed: 26, size: [2.2, 3.6], sway: 30, leaf: true },
+    yaz: { n: 0 },
+  };
+  function drawWeather(t) {
+    if (!enabled) return;
+    const w = WEATHER[G.season()];
+    if (weatherSeason !== G.season()) { flakes.length = 0; weatherSeason = G.season(); }
+    const { W, H } = R.size;
+    const dt = Math.min(0.1, (t - lastWeatherT) / 1000 || 0);
+    lastWeatherT = t;
+    while (flakes.length < w.n) flakes.push({ x: Math.random() * W, y: Math.random() * H, r: w.size[0] + Math.random() * (w.size[1] - w.size[0]), c: w.colors[Math.floor(Math.random() * w.colors.length)], ph: Math.random() * 6.28, v: 0.7 + Math.random() * 0.6 });
+    flakes.length = w.n || 0;
+    for (const f of flakes) {
+      f.y += w.speed * f.v * dt;
+      f.x += Math.sin(t / 900 + f.ph) * w.sway * dt;
+      if (f.y > H + 10) { f.y = -10; f.x = Math.random() * W; }
+      if (f.x < -10) f.x = W + 10; else if (f.x > W + 10) f.x = -10;
+      ctx.fillStyle = f.c;
+      ctx.beginPath();
+      if (w.leaf) ctx.ellipse(f.x, f.y, f.r, f.r * 0.55, Math.sin(t / 500 + f.ph) * 1.2, 0, Math.PI * 2);
+      else ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // mahalle değişince arabaları, insanları ve parçacıkları temizle
