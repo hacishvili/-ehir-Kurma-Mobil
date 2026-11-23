@@ -268,10 +268,11 @@ function onDown(e) {
   const [tx, ty] = R.screenToTile(x, y);
   const b = G.buildingAt(s, tx, ty);
 
-  if (mode === 'road') {
-    gesture = { kind: 'road', sx: x, sy: y, last: null, first: true };
-    paintRoad(tx, ty, true);
-    gesture.last = `${tx},${ty}`;
+  // Yol modunda: yoldan (ya da ana caddeden) başlayan sürükleme yol çizer/siler,
+  // boş yerden başlayan sürükleme haritayı kaydırır, dokunmak tek kare yol koyar.
+  if (mode === 'road' && ((b && G.isRoadType(b.type)) || G.isAvenue(tx, ty))) {
+    gesture = { kind: 'road', sx: x, sy: y, last: `${tx},${ty}`, first: true };
+    if (roadErase) paintRoad(tx, ty, true);
     return;
   }
   if (mode === 'place' && view.placement && tx === view.placement.x && ty === view.placement.y) {
@@ -337,7 +338,7 @@ function onUp(e) {
     if (mode === 'normal' && R.hitVisitor(gesture.sx, gesture.sy)) { A.play('tap'); openVisitor(); }
     else {
       const [tx, ty] = R.screenToTile(gesture.sx, gesture.sy);
-      onTap(tx, ty);
+      if (mode === 'road') paintRoad(tx, ty, true); else onTap(tx, ty);
     }
   }
   if (pointers.size === 0 || (gesture && gesture.kind === 'pinch')) gesture = null;
@@ -396,7 +397,7 @@ function updateRoadBar() {
     return `<button type="button" class="chip road-type ${roadType === id ? 'on' : ''}" data-road="${id}" ${locked ? 'disabled' : ''}>${d.icon} ${d.name}${locked ? ` · Sv ${d.unlock}` : d.cost ? ` · ${d.cost}` : ' · bedava'}</button>`;
   }).join('');
   $('placeInfo').innerHTML = `<b>${roadErase ? 'Yol sil' : 'Yol yap'}</b><div class="road-types">${chips}</div>
-    <span>Parmağını sürükleyerek çiz. Binalar bağlı bir yola komşu olmalı. Nehrin üstüne yol köprü olur.</span>`;
+    <span>Dokununca yol konur. Yoldan ya da caddeden başlayıp sürükleyerek çiz; boş yerden sürüklersen harita kayar. Binalar bağlı bir yola komşu olmalı. Nehrin üstüne yol köprü olur.</span>`;
   for (const el of $('placeInfo').querySelectorAll('[data-road]')) {
     el.onclick = () => { roadType = el.dataset.road; roadErase = false; updateRoadBar(); };
   }
