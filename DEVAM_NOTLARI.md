@@ -135,3 +135,12 @@ Her çalışma oturumunda buraya tarihli not eklenir. Claude sohbetler arasında
 - Emlak piyasası: mahalle endeksi, al-sat, haftalık olaylar, sanatçı etkisi.
 - Kiracı hikayeleri, günlük hedefler, ses.
 - Sonra: denge ayarı (kullanıcı oynayınca), Android paketleme, sosyal özellikler.
+
+## 2026-11-23 — Mahalleler
+
+- Dört yeni mahalle (`js/data.js` → `HOODS`): Sahil (seviye 8, 15.000), Sanayi Bölgesi (15, 60.000), İş Merkezi (22, 200.000), Tepe Villaları (30, 600.000).
+- Para, seviye, elmas, koleksiyon ortak; her mahallenin binaları, arsaları ve arsa fiyatı ayrı. Görüntülenmeyen mahalle `s.hoods` içinde saklanır, geçişte yer değiştirir. Ticari gelir geri dönüldüğünde aradaki süre için eklenir; kontratlar zamana bağlı olduğu için zaten işler.
+- Kurallar: Sahil'de deniz ve kıyıya bina yapılamaz, denize 2 kare yakın eve +%15, cadde kumsalda biter. Sanayi'de olumsuz etkiler 1 kare geniş, sanayi geliri +%25, zemin beton. İş Merkezi'nde gökdelen/rezidans/saat kulesi yanındaki eve -%10 gölge, zemin beton. Tepe'de her kare tepe (+%10), ünlü her eve gelir, yalnız 4 parsel satılık.
+- Alt menüye Mahalle düğmesi; mahalle listesi açma/geçme. Görevlere "Seviye 8" ve "Sahil'i aç" eklendi. Denizde parıltı.
+- Kayıt uyumu: eski kayıtlar Eski Çarşı'da açılır. 6 yeni test (toplam 28).
+- Not: `game.js` görüntülenen mahalleyi modül düzeyinde tutar (`setActiveHood`); tek oyun durumu olduğu için sorun değil.

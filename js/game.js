@@ -1,5 +1,5 @@
 // Oyun mantığı. Ekran çizimi ve dokunma burada yok; böylece testler tarayıcısız çalışır.
-import { CONFIG, BUILDINGS, TENANTS, QUESTS, TERRAIN, MAP_TERRAIN, COLLECTION } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, QUESTS, TERRAIN, COLLECTION, HOODS, TALL } from './data.js';
 
 export const MIN = 60 * 1000;
 export const HOUR = 60 * MIN;
@@ -23,6 +23,9 @@ export function createState() {
     stats: { contractsSigned: 0, rentsCollected: 0, moneyEarned: 0 },
     questIndex: 0,
     questDone: false,
+    hood: 'eski',
+    hoodsOpen: ['eski'],
+    hoods: {}, // açık olup şu an görüntülenmeyen mahallelerin binaları ve arsaları
     diamonds: CONFIG.startDiamonds,
     collection: Object.fromEntries(Object.keys(COLLECTION).map(k => [k, 0])),
     collectionSets: 0,
@@ -37,6 +40,8 @@ export function hydrate(s) {
   if (!s.collection) s.collection = {};
   for (const k of Object.keys(COLLECTION)) s.collection[k] = s.collection[k] || 0;
   if (s.collectionSets === undefined) s.collectionSets = 0;
+  if (!s.hood) { s.hood = 'eski'; s.hoodsOpen = ['eski']; s.hoods = {}; }
+  setActiveHood(s.hood);
   Object.defineProperty(s, '_cache', { value: { version: -1 }, writable: true, enumerable: false });
   Object.defineProperty(s, 'events', { value: [], writable: true, enumerable: false });
   Object.defineProperty(s, 'version', { value: 0, writable: true, enumerable: false });
@@ -77,15 +82,64 @@ export function isUnlocked(s, x, y) {
   return s.parcels.includes(`${px},${py}`);
 }
 
-const terrainMap = new Map(MAP_TERRAIN.map(([x, y, type]) => [`${x},${y}`, type]));
+// ---------- Mahalle ----------
+// Görüntülenen mahallenin tanımı. Oyunda tek durum olduğu için modül düzeyinde tutulur.
+let H = HOODS.eski;
+let terrainMap = new Map();
 
-// Karedeki arazi türü (nehir, tepe) ya da null
+function setActiveHood(id) {
+  H = HOODS[id];
+  terrainMap = new Map(H.terrain.map(([x, y, type]) => [`${x},${y}`, type]));
+}
+
+export function activeHood() {
+  return H;
+}
+
+// Karedeki arazi türü (nehir, tepe, deniz ...) ya da null
 export function terrainAt(x, y) {
-  return terrainMap.get(`${x},${y}`) || null;
+  if (!inBounds(x, y)) return null;
+  return terrainMap.get(`${x},${y}`) || (H.allTerrain && !isAvenue(x, y) ? H.allTerrain : null);
 }
 
 export function isAvenue(x, y) {
-  return x === CONFIG.avenueX && inBounds(x, y);
+  return x === H.avenue.x && y >= H.avenue.y0 && y <= H.avenue.y1 && inBounds(x, y);
+}
+
+export function hoodUnlocked(s, id) {
+  return s.hoodsOpen.includes(id);
+}
+
+export function openHood(s, id) {
+  const hd = HOODS[id];
+  if (!hd) return fail('Bilinmeyen mahalle.');
+  if (hoodUnlocked(s, id)) return fail('Bu mahalle zaten açık.');
+  if (s.level < hd.unlock) return fail(`${hd.name} seviye ${hd.unlock}'te açılır.`);
+  if (s.money < hd.openCost) return fail('Yeterli para yok.');
+  s.money -= hd.openCost;
+  s.hoodsOpen.push(id);
+  s.hoods[id] = { buildings: {}, parcels: CONFIG.startParcels.map(([px, py]) => `${px},${py}`), parcelsPaid: hd.openCost, leftAt: s.gameTime };
+  addXp(s, Math.round(hd.openCost / 200));
+  emit(s, 'hoodOpened', { id });
+  return ok();
+}
+
+// Başka mahalleye geç: görüntülenenin verisi saklanır, hedefinki yüklenir.
+export function switchHood(s, id) {
+  if (!hoodUnlocked(s, id)) return fail('Bu mahalle henüz açılmadı.');
+  if (id === s.hood) return ok();
+  s.hoods[s.hood] = { buildings: s.buildings, parcels: s.parcels, parcelsPaid: s.parcelsPaid, leftAt: s.gameTime };
+  const target = s.hoods[id];
+  delete s.hoods[id];
+  s.buildings = target.buildings;
+  s.parcels = target.parcels;
+  s.parcelsPaid = target.parcelsPaid;
+  s.hood = id;
+  setActiveHood(id);
+  changed(s);
+  // yokken biriken ticari gelir (bağlantı o sürede değişmedi)
+  accrueIncome(s, s.gameTime - (target.leftAt ?? s.gameTime));
+  return ok();
 }
 
 function cache(s) {
@@ -123,9 +177,9 @@ function computeConnected(grid) {
   const n = CONFIG.gridSize;
   const roadOk = Array.from({ length: n }, () => new Array(n).fill(false));
   const queue = [];
-  for (let y = 0; y < n; y++) {
-    roadOk[y][CONFIG.avenueX] = true;
-    queue.push([CONFIG.avenueX, y]);
+  for (let y = H.avenue.y0; y <= H.avenue.y1; y++) {
+    roadOk[y][H.avenue.x] = true;
+    queue.push([H.avenue.x, y]);
   }
   const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
   while (queue.length) {
@@ -204,11 +258,16 @@ export function bonusAt(s, x, y, tenant = null, opts = {}) {
   for (const b of sources) {
     const e = def(b.type).effect;
     if (!e || covers(b, x, y)) continue;
-    if (!inRadius(b, x, y, e.radius)) continue;
+    const r = e.radius + (H.rule === 'kirlilik' && e.all < 0 ? 1 : 0);
+    if (!inRadius(b, x, y, r)) continue;
     const v = e.all + (tenant ? ((e.tenants || {})[tenant] || 0) : 0);
     perType[b.type] = (perType[b.type] || 0) + v;
   }
-  // arazi: nehir manzarası ve tepe
+  // İş Merkezi: yüksek binalar yanındaki evin manzarasını kapatır
+  if (H.rule === 'golge' && sources.some(b => TALL.includes(b.type) && !covers(b, x, y) && inRadius(b, x, y, 1))) {
+    perType.golge = (perType.golge || 0) - 10;
+  }
+  // arazi: nehir, deniz manzarası ve tepe
   for (const [type, ter] of Object.entries(TERRAIN)) {
     if (ter.onBonus && terrainAt(x, y) === type) perType[type] = (perType[type] || 0) + ter.onBonus;
     if (ter.nearBonus && nearTerrain(x, y, type, ter.nearBonus.radius)) {
@@ -299,7 +358,7 @@ export function generateCards(s, house, rng = Math.random) {
 // Bu ev türüne bu seviyede gelebilecek kiracılar
 export function availableTenants(s, houseType) {
   return Object.entries(TENANTS)
-    .filter(([, t]) => (t.unlock || 1) <= s.level && (!t.houses || t.houses.includes(houseType)))
+    .filter(([, t]) => (t.unlock || 1) <= s.level && (!t.houses || t.houses.includes(houseType) || H.rule === 'tepe'))
     .map(([id]) => id);
 }
 
@@ -438,7 +497,7 @@ export function declineRenewal(s, houseId) {
 // ---------- Ticari gelir ----------
 
 export function storageCap(type) {
-  return Math.round((def(type).incomePerHour || 0) * CONFIG.commercialStorageHours);
+  return Math.round(incomePerHour(type) * CONFIG.commercialStorageHours);
 }
 
 export function hasIncome(b) {
@@ -496,12 +555,25 @@ export function advance(s, realMs) {
   if (realMs <= 0) return;
   const dt = realMs * s.speed;
   s.gameTime += dt;
+  accrueIncome(s, dt);
+}
+
+// Görüntülenen mahallede ticari gelir biriktir (diğer mahalleler geçişte hesaplanır)
+function accrueIncome(s, dt) {
+  if (dt <= 0) return;
   for (const b of Object.values(s.buildings)) {
     if (hasIncome(b) && isConnected(s, b)) {
       const cap = storageCap(b.type);
-      b.stored = Math.min(cap, (b.stored || 0) + def(b.type).incomePerHour * dt / HOUR);
+      b.stored = Math.min(cap, (b.stored || 0) + incomePerHour(b.type) * dt / HOUR);
     }
   }
+}
+
+// Sanayi Bölgesi'nde sanayi geliri artar
+export function incomePerHour(type) {
+  const d = def(type);
+  const bonus = d.cat === 'sanayi' && H.industryBonus ? H.industryBonus : 0;
+  return Math.round((d.incomePerHour || 0) * (1 + bonus));
 }
 
 // Oyuncu yokken olanların özeti.
@@ -594,7 +666,12 @@ export function sell(s, id) {
 // ---------- Arsa ----------
 
 export function parcelCost(s) {
-  return Math.round(CONFIG.parcelBaseCost * Math.pow(CONFIG.parcelGrowth, s.parcels.length - CONFIG.startParcels.length));
+  return Math.round(H.parcelBaseCost * Math.pow(CONFIG.parcelGrowth, s.parcels.length - CONFIG.startParcels.length));
+}
+
+// Bu mahallede açılabilir mi (Tepe Villaları'nda arsa az)
+export function parcelBuyable(px, py) {
+  return !H.buyable || H.buyable.includes(`${px},${py}`);
 }
 
 export function buyParcel(s, px, py) {
@@ -602,6 +679,7 @@ export function buyParcel(s, px, py) {
   const max = CONFIG.gridSize / CONFIG.parcelSize;
   if (px < 0 || py < 0 || px >= max || py >= max) return fail('Geçersiz parsel.');
   if (s.parcels.includes(key)) return fail('Bu parsel zaten açık.');
+  if (!parcelBuyable(px, py)) return fail('Bu mahallede bu arsa satılık değil.');
   const cost = parcelCost(s);
   if (s.money < cost) return fail('Yeterli para yok.');
   s.money -= cost;
@@ -632,8 +710,11 @@ export function addXp(s, amount) {
 }
 
 export function netWorth(s) {
-  let v = s.money + s.parcelsPaid;
-  for (const b of Object.values(s.buildings)) v += (b.paid || 0) * CONFIG.netWorthBuildingRate;
+  let v = s.money;
+  for (const hd of [{ buildings: s.buildings, parcelsPaid: s.parcelsPaid }, ...Object.values(s.hoods || {})]) {
+    v += hd.parcelsPaid || 0;
+    for (const b of Object.values(hd.buildings)) v += (b.paid || 0) * CONFIG.netWorthBuildingRate;
+  }
   return Math.round(v);
 }
 
@@ -656,6 +737,7 @@ export function questProgress(s, q) {
     case 'parcels': return s.parcels.length;
     case 'level': return s.level;
     case 'netWorth': return netWorth(s);
+    case 'hoods': return s.hoodsOpen.length;
     default: return 0;
   }
 }

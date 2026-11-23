@@ -108,7 +108,7 @@ button:focus-visible { outline: 3px solid var(--coin); outline-offset: 2px; }
 /* ---------- Alt menü ---------- */
 #dock {
   position: absolute; left: 0; right: 0; bottom: 0;
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+  display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;
   padding: 10px max(12px, var(--safe-r)) calc(var(--safe-b) + 10px) max(12px, var(--safe-l));
   background: linear-gradient(to top, rgba(22,32,46,0.55), rgba(22,32,46,0));
 }
@@ -267,3 +267,13 @@ h3 { font-family: var(--font-display); font-weight: 600; font-size: 15px; margin
   .worth .lbl { font-size: 9px; letter-spacing: .05em; }
   .worth #worth { font-size: 13px; }
 }
+
+#hoodName { font-weight: 800; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.dock-btn { min-width: 0; }
+.hoods { display: grid; gap: 10px; }
+.hood { background: #fff; border-radius: 16px; padding: 12px; display: grid; grid-template-columns: 44px 1fr auto; gap: 4px 12px; align-items: center; box-shadow: 0 0 0 1.5px var(--line), 0 3px 0 var(--line); }
+.hood.current { box-shadow: 0 0 0 2.5px var(--accent), 0 3px 0 var(--line); }
+.hood .hi { font-size: 30px; grid-row: span 2; text-align: center; }
+.hood .hn { font-weight: 800; font-size: 16px; }
+.hood .hh { grid-column: 2 / 4; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.hood.locked .hi, .hood.locked .hn { opacity: .55; }

@@ -1,7 +1,7 @@
 // Şehri canlı gösteren, kodla çizilen hareketler: arabalar, yürüyen insanlar, ağaçlar,
 // duman, su parıltısı ve kira toplanınca saçılan paralar. Oyun kurallarını etkilemez.
 // Hepsi gerçek zamanla akar (oyun hız ayarından etkilenmez).
-import { CONFIG, BUILDINGS } from './data.js';
+import { CONFIG, BUILDINGS, TERRAIN } from './data.js';
 import * as G from './game.js';
 
 const CAR_COLORS = ['#e5534b', '#2f7de1', '#f2b134', '#ffffff', '#3a3f4b', '#2fbf71', '#a259d9'];
@@ -160,7 +160,8 @@ export function createAmbient(R) {
     const n = CONFIG.gridSize;
     for (let y = 0; y < n; y++) {
       for (let x = 0; x < n; x++) {
-        if (G.isUnlocked(s, x, y) || G.isAvenue(x, y) || G.terrainAt(x, y) === 'nehir') continue;
+        const ter = G.terrainAt(x, y);
+        if (G.isUnlocked(s, x, y) || G.isAvenue(x, y) || (ter && !TERRAIN[ter].buildable) || ter === 'kum') continue;
         const count = hash(x, y) < 0.45 ? (hash(x, y, 1) < 0.35 ? 2 : 1) : 0;
         for (let k = 0; k < count; k++) {
           const fx = x + 0.25 + hash(x, y, 2 + k) * 0.5;
@@ -202,6 +203,13 @@ export function createAmbient(R) {
 
   function emitters(s, dt) {
     emitClock += dt;
+    // denizde parıltı
+    if (emitClock % 0.2 < dt && Math.random() < 0.8) {
+      const x = Math.floor(Math.random() * CONFIG.gridSize), y = Math.floor(Math.random() * CONFIG.gridSize);
+      if (G.terrainAt(x, y) === 'deniz') {
+        emit({ kind: 'spark', fx: x + Math.random(), fy: y + Math.random(), h: 0, vx: 0, vy: 0, vh: 0, life: 0, max: 0.8 });
+      }
+    }
     const smokeTick = emitClock % 0.35 < dt;
     const sparkTick = emitClock % 0.25 < dt;
     for (const b of Object.values(s.buildings)) {
@@ -319,8 +327,13 @@ export function createAmbient(R) {
     for (const p of particles) drawParticle(p, t);
   }
 
+  // mahalle değişince arabaları, insanları ve parçacıkları temizle
+  function reset() {
+    cars.length = 0; people.length = 0; particles.length = 0; version = -1;
+  }
+
   return {
-    update, drawables, drawOverlay, burst,
+    update, drawables, drawOverlay, burst, reset,
     get enabled() { return enabled; },
     set enabled(v) { enabled = !!v; },
     get counts() { return { cars: cars.length, people: people.length, particles: particles.length }; },

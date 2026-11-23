@@ -1,5 +1,5 @@
 // Oyunun ekranı: döngü, dokunma, menüler. Kurallar game.js'te, rakamlar data.js'te.
-import { CONFIG, BUILDINGS, TENANTS, CATEGORIES, QUESTS, COLLECTION } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, CATEGORIES, QUESTS, COLLECTION, HOODS } from './data.js';
 import * as G from './game.js';
 import { createRenderer, loadSprites } from './render.js';
 import { createAmbient } from './ambient.js';
@@ -103,6 +103,8 @@ function drainEvents(t) {
       buzz(12);
     } else if (e.type === 'levelUp') {
       showLevelUp(e.level, e.reward, e.diamonds);
+    } else if (e.type === 'hoodOpened') {
+      toast(`${HOODS[e.id].name} açıldı! Mahalle menüsünden geçebilirsin.`);
     } else if (e.type === 'collectionDrop') {
       const it = COLLECTION[e.item];
       view.floaters.push({ x: e.x, y: e.y, text: `+1 ${it.name}`, t0: t + 400, color: '#bde7ff' });
@@ -135,6 +137,8 @@ function setText(id, v) {
 function updateHud() {
   setText('money', compact(s.money));
   setText('diamonds', String(s.diamonds));
+  setText('hoodName', G.activeHood().short || G.activeHood().name);
+  setText('hoodIcon', G.activeHood().icon);
   setText('level', String(s.level));
   setText('worth', compact(G.netWorth(s)));
   const pct = Math.min(100, (s.xp / G.xpToNext(s.level)) * 100);
@@ -664,7 +668,7 @@ function openBuild() {
   openSheet({
     sig: () => `${s.level}|${Math.floor(s.money / 25)}|${s.version}`,
     render: () => {
-      let html = '<h2>İnşa et</h2>';
+      let html = `<h2>İnşa et · ${G.activeHood().name}</h2>`;
       for (const [cat, info] of Object.entries(CATEGORIES)) {
         const items = Object.entries(BUILDINGS).filter(([, d]) => d.cat === cat);
         html += `<div class="cat-title"><h3>${info.name}</h3><small>${info.hint}</small></div><div class="blist">`;
@@ -714,6 +718,45 @@ function openParcel(px, py) {
       },
     },
   });
+}
+
+// ---------- Mahalleler ----------
+
+function openHoods() {
+  view.selectedId = null;
+  openSheet({
+    sig: () => `${s.hood}|${s.hoodsOpen.join()}|${s.level}|${Math.floor(s.money / 1000)}`,
+    render: () => {
+      let html = '<h2>Mahalleler</h2><p class="sub">Para, seviye ve elmas ortak; her mahallenin kendi arsası, binaları ve kuralı var.</p><div class="hoods">';
+      for (const [id, hd] of Object.entries(HOODS)) {
+        const open = G.hoodUnlocked(s, id);
+        const current = s.hood === id;
+        let action;
+        if (current) action = '<span class="chip good">Buradasın</span>';
+        else if (open) action = `<button type="button" class="btn primary small" data-act="go" data-id="${id}">Git</button>`;
+        else if (s.level < hd.unlock) action = `<span class="chip">🔒 Seviye ${hd.unlock}</span>`;
+        else action = `<button type="button" class="btn coin small" data-act="open" data-id="${id}" ${s.money < hd.openCost ? 'disabled' : ''}>Aç · ${G.formatMoney(hd.openCost)}</button>`;
+        html += `<div class="hood ${current ? 'current' : ''} ${open ? '' : 'locked'}">
+          <span class="hi">${hd.icon}</span><span class="hn">${hd.name}</span>${action}
+          <span class="hh">${hd.hint}</span></div>`;
+      }
+      return html + '</div>';
+    },
+    actions: {
+      open: ds => { if (result(G.openHood(s, ds.id))) { goHood(ds.id); } },
+      go: ds => goHood(ds.id),
+    },
+  });
+}
+
+function goHood(id) {
+  if (!result(G.switchHood(s, id))) return;
+  AMB.reset();
+  closeSheet();
+  view.selectedId = null;
+  R.centerOn(6, 6, startZoom());
+  toast(`${G.activeHood().name} ${G.activeHood().icon}`);
+  save();
 }
 
 // ---------- Menü ----------
@@ -846,6 +889,7 @@ function bindUi() {
     toast(total ? `+${G.formatMoney(total)} 🪙 toplandı` : 'Şu an toplanacak bir şey yok.');
   });
   $('btnMenu').addEventListener('click', () => { if (mode === 'road') setMode('normal'); openMenu(); });
+  $('btnHood').addEventListener('click', () => { if (mode === 'road') setMode('normal'); openHoods(); });
   $('levelBtn').addEventListener('click', openLevel);
   $('placeOk').addEventListener('click', confirmPlacement);
   $('placeCancel').addEventListener('click', cancelPlacement);

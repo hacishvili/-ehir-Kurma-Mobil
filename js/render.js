@@ -48,6 +48,10 @@ export function loadSprites(onLoad = () => {}) {
     img.onerror = () => {};
     img.src = `${SPRITE_DIR}${ter.sprite}.png`;
   }
+  // mahalle zemini (beton)
+  const beton = new Image();
+  beton.onload = () => { sprites['zemin-beton'] = beton; };
+  beton.src = `${SPRITE_DIR}zemin-beton.png`;
 }
 
 export function hasSprite(type) {
@@ -139,7 +143,10 @@ export function createRenderer(canvas) {
         const b = G.buildingAt(s, x, y);
         const ter = G.terrainAt(x, y);
         const bridge = G.isAvenue(x, y) && G.terrainAt(x - 1, y) === 'nehir';
-        const terImg = ter ? sprites[TERRAIN[ter].sprite] : bridge ? sprites[TERRAIN.nehir.sprite] : null;
+        const hood = G.activeHood();
+        let terImg = ter ? sprites[TERRAIN[ter].sprite] : bridge ? sprites[TERRAIN.nehir.sprite] : null;
+        // Sanayi ve İş Merkezi'nde açık arsalar beton
+        if (!terImg && hood.groundTile && unlocked && !G.isAvenue(x, y) && !(b && b.type === 'yol')) terImg = sprites[hood.groundTile] || null;
         if (G.isAvenue(x, y)) fill = GROUND.avenue;
         else if (b && b.type === 'yol') fill = G.isRoadConnected(s, x, y) ? GROUND.road : GROUND.roadOff;
         if (terImg) {
@@ -214,12 +221,14 @@ export function createRenderer(canvas) {
     for (let py = 0; py < max; py++) {
       for (let px = 0; px < max; px++) {
         if (s.parcels.includes(`${px},${py}`)) continue;
+        const buyable = G.parcelBuyable(px, py);
         const a = diamond(px * p, py * p).pts[0];
         const b = diamond(px * p + p - 1, py * p).pts[1];
         const c = diamond(px * p + p - 1, py * p + p - 1).pts[2];
         const d = diamond(px * p, py * p + p - 1).pts[3];
         const cx = (a[0] + c[0]) / 2, cy = (a[1] + c[1]) / 2;
-        if (labels) { pill(cx, cy, `🔒 ${G.formatMoney(price)}`, 'rgba(22,32,48,0.78)', '#ffe08a', 11); continue; }
+        if (labels) { if (buyable) pill(cx, cy, `🔒 ${G.formatMoney(price)}`, 'rgba(22,32,48,0.78)', '#ffe08a', 11); continue; }
+        if (!buyable) { poly([a, b, c, d], 'rgba(20,40,20,0.22)'); continue; }
         ctx.lineWidth = 1.5;
         ctx.setLineDash([5, 5]);
         poly([a, b, c, d], 'rgba(20,40,20,0.10)', 'rgba(255,255,255,0.55)');

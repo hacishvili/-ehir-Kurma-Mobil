@@ -268,3 +268,79 @@ test('eski kayıt yeni alanlarla açılır', () => {
   assert.equal(t.diamonds, 5);
   assert.equal(t.collection.tapu, 0);
 });
+
+test('mahalle: seviye ve para ister, açılınca geçilir, binalar mahallede kalır', () => {
+  const s = rich();
+  s.level = 5;
+  assert.equal(G.openHood(s, 'sahil').ok, false, 'seviye 8 gerekli');
+  s.level = 8;
+  const evId = G.build(s, 'ev', AX + 1, 5).id;
+  assert.ok(G.openHood(s, 'sahil').ok);
+  const worthBefore = G.netWorth(s);
+  assert.ok(G.switchHood(s, 'sahil').ok);
+  assert.equal(Object.keys(s.buildings).length, 0, 'Sahil boş başlar');
+  assert.equal(G.netWorth(s), worthBefore, 'net değer bütün mahalleleri sayar');
+  G.build(s, 'ev', AX + 1, 5);
+  assert.ok(G.switchHood(s, 'eski').ok);
+  assert.ok(s.buildings[evId], 'Eski Çarşı binası yerinde');
+  assert.equal(Object.keys(s.buildings).length, 1);
+});
+
+test('Sahil: denize bina yapılamaz, deniz manzarası bonusu, cadde kumsalda biter', () => {
+  const s = rich();
+  s.level = 8;
+  G.openHood(s, 'sahil');
+  G.switchHood(s, 'sahil');
+  G.buyParcel(s, 1, 2);
+  assert.equal(G.build(s, 'ev', 6, 11).ok, false, 'deniz');
+  assert.equal(G.build(s, 'ev', 6, 10).ok, false, 'kıyı');
+  assert.ok(G.build(s, 'ev', 6, 9).ok, 'kum');
+  assert.equal(G.bonusAt(s, 6, 9).total, 15);
+  assert.equal(G.isAvenue(5, 10), false);
+  G.switchHood(s, 'eski');
+  assert.equal(G.isAvenue(5, 10), true, 'Eski Çarşı caddesi boydan boya');
+});
+
+test('Sanayi Bölgesi: kirlilik etkiyi genişletir, sanayi geliri artar', () => {
+  const s = rich();
+  s.level = 20;
+  G.build(s, 'atolye', 7, 4);
+  assert.equal(G.bonusAt(s, 7, 7).total, 0, 'Eski Çarşıda 3 kare uzak etkilenmez');
+  G.openHood(s, 'sanayi');
+  G.switchHood(s, 'sanayi');
+  G.build(s, 'atolye', 7, 4);
+  assert.ok(G.bonusAt(s, 7, 7).total < 0, 'kirlilikle etkilenir');
+  assert.ok(G.incomePerHour('atolye') > 220);
+});
+
+test('İş Merkezi: yüksek bina yanındaki eve gölge', () => {
+  const s = rich();
+  s.level = 30;
+  G.openHood(s, 'is');
+  G.switchHood(s, 'is');
+  G.build(s, 'gokdelen', 7, 4);
+  const near = G.bonusAt(s, 7, 5).parts.find(p => p.type === 'golge');
+  assert.equal(near.value, -10);
+});
+
+test('Tepe Villaları: her kare tepe, ünlü her eve, arsa sınırlı', () => {
+  const s = rich();
+  s.level = 30;
+  G.openHood(s, 'tepe');
+  G.switchHood(s, 'tepe');
+  assert.equal(G.terrainAt(6, 6), 'tepe');
+  assert.ok(G.availableTenants(s, 'ev').includes('unlu'));
+  assert.equal(G.buyParcel(s, 0, 0).ok, false);
+  assert.ok(G.buyParcel(s, 2, 1).ok);
+});
+
+test('geri dönünce yokken biriken ticari gelir eklenir', () => {
+  const s = rich();
+  s.level = 10;
+  const k = G.build(s, 'kafe', AX + 1, 5).id;
+  G.openHood(s, 'sahil');
+  G.switchHood(s, 'sahil');
+  G.advance(s, 2 * G.HOUR);
+  G.switchHood(s, 'eski');
+  assert.ok(s.buildings[k].stored > 70);
+});
