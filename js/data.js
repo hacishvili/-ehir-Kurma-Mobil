@@ -82,7 +82,11 @@ export const CONFIG = {
 //   x, y: bina alanının merkezinden kayma (kare), h: yükseklik (piksel)
 // effect: { radius, all, tenants: { kiracıId: ek yüzde } } — radius kare tabanlı (radius 1 = 3x3 alan)
 export const BUILDINGS = {
-  yol: { name: 'Yol', cat: 'yol', icon: '', cost: 0, unlock: 1 },
+  yol: { name: 'Asfalt Yol', cat: 'yol', icon: '🛣️', cost: 0, unlock: 1 },
+  'yol-tas': { name: 'Arnavut Kaldırımı', cat: 'yol', icon: '🧱', cost: 20, unlock: 3,
+    effect: { radius: 1, all: 1, tenants: { emekli: 2, sanatci: 2 } } },
+  bulvar: { name: 'Ağaçlı Bulvar', cat: 'yol', icon: '🌳', cost: 60, unlock: 6,
+    effect: { radius: 1, all: 2 } },
 
   ev: {
     name: 'Müstakil Ev', cat: 'konut', icon: '🏠', cost: 250, unlock: 1,
@@ -223,12 +227,214 @@ export const BUILDINGS = {
     effect: { radius: 2, all: 8, tenants: { aile: 4, genc: 4, unlu: 4 } },
   },
 
+  // ---- Malzeme isteyen büyük binalar için mats aşağıda MATS tablosunda ----
+
+  // ---- Yeni binalar ----
+  eczane: {
+    name: 'Eczane', cat: 'ticari', icon: '💊', cost: 900, unlock: 3,
+    incomePerHour: 60, height: 16,
+    effect: { radius: 2, all: 3, tenants: { emekli: 8, aile: 4 } },
+  },
+  'cay-bahcesi': {
+    name: 'Çay Bahçesi', cat: 'ticari', icon: '🫖', cost: 600, unlock: 2,
+    incomePerHour: 45, height: 12,
+    effect: { radius: 2, all: 4, tenants: { emekli: 8, sanatci: 4 } },
+  },
+  hamam: {
+    name: 'Hamam', cat: 'ticari', icon: '♨️', cost: 2200, unlock: 7,
+    incomePerHour: 160, height: 16,
+    effect: { radius: 2, all: 5, tenants: { emekli: 6, unlu: 4 } },
+  },
+  otel: {
+    name: 'Otel', cat: 'ticari', icon: '🏨', cost: 4800, unlock: 10,
+    incomePerHour: 420, height: 40,
+    effect: { radius: 2, all: 4, tenants: { genc: 4, ogrenci: -4 } },
+  },
+  cami: {
+    name: 'Cami', cat: 'kamu', icon: '🕌', cost: 2500, unlock: 5,
+    height: 30,
+    effect: { radius: 3, all: 5, tenants: { emekli: 6, aile: 4 } },
+  },
+  kutuphane: {
+    name: 'Kütüphane', cat: 'kamu', icon: '📚', cost: 1800, unlock: 4,
+    height: 22,
+    effect: { radius: 2, all: 3, tenants: { ogrenci: 12, sanatci: 8 } },
+  },
+  spor: {
+    name: 'Spor Merkezi', cat: 'kamu', icon: '🏀', cost: 2400, unlock: 6,
+    height: 18,
+    effect: { radius: 2, all: 3, tenants: { genc: 10, ogrenci: 8 } },
+  },
+
+  // ---- Ağaçlar (süsleme) ----
+  'agac-cam': { name: 'Çam Ağaçları', cat: 'dekor', icon: '🌲', cost: 100, unlock: 1, height: 24,
+    effect: { radius: 1, all: 2, tenants: { emekli: 2 } } },
+  'agac-zeytin': { name: 'Zeytin Ağaçları', cat: 'dekor', icon: '🫒', cost: 140, unlock: 2, height: 16,
+    effect: { radius: 1, all: 3 } },
+  'agac-kiraz': { name: 'Kiraz Ağacı', cat: 'dekor', icon: '🌸', cost: 180, unlock: 3, height: 18,
+    effect: { radius: 1, all: 3, tenants: { aile: 2, genc: 2 } } },
+  'agac-palmiye': { name: 'Palmiyeler', cat: 'dekor', icon: '🌴', cost: 220, unlock: 4, height: 26,
+    effect: { radius: 1, all: 3, tenants: { unlu: 4 } } },
+
+  // ---- Elmasla alınan özel yapılar ----
+  'ozel-kule': {
+    name: 'Gökyüzü Kulesi', cat: 'simge', icon: '🗼', cost: 0, diamondCost: 60, unlock: 8, height: 90, premium: true,
+    effect: { radius: 6, all: 15, tenants: { unlu: 10, genc: 6 } },
+  },
+  'ozel-dolap': {
+    name: 'Dönme Dolap', cat: 'simge', icon: '🎡', cost: 0, diamondCost: 40, unlock: 6, size: 2, height: 40, premium: true,
+    incomePerHour: 300,
+    effect: { radius: 4, all: 10, tenants: { aile: 8, ogrenci: 8 } },
+  },
+  'ozel-saray': {
+    name: 'Saray', cat: 'simge', icon: '🏰', cost: 0, diamondCost: 80, unlock: 10, size: 2, height: 40, premium: true,
+    effect: { radius: 6, all: 18, tenants: { unlu: 10, emekli: 6 } },
+  },
+
+  // ---- Üretim zinciri (Sanayi Baronu'ndan): hammadde ----
+  // produce: { inputs, outputs, minutes } — bir döngüde her bina girdileri tüketip çıktıyı depoya koyar
+  orman: { name: 'Orman Kampı', cat: 'hammadde', icon: '🌲', cost: 500, unlock: 2, height: 16,
+    produce: { inputs: {}, outputs: { odun: 1 }, minutes: 1 },
+    effect: { radius: 1, all: -2 } },
+  'kum-ocagi': { name: 'Kum Ocağı', cat: 'hammadde', icon: '⏳', cost: 450, unlock: 2, height: 8,
+    produce: { inputs: {}, outputs: { kum: 1 }, minutes: 0.8 },
+    effect: { radius: 1, all: -3 } },
+  tarla: { name: 'Buğday Tarlası', cat: 'hammadde', icon: '🌾', cost: 450, unlock: 3, height: 8,
+    produce: { inputs: {}, outputs: { bugday: 1 }, minutes: 1 },
+    effect: { radius: 1, all: 1, tenants: { aile: 2 } } },
+  komur: { name: 'Kömür Ocağı', cat: 'hammadde', icon: '⛏️', cost: 900, unlock: 4, height: 18,
+    produce: { inputs: {}, outputs: { komur: 1 }, minutes: 1.4 },
+    effect: { radius: 2, all: -6, tenants: { aile: -4, emekli: -4 } } },
+  'demir-madeni': { name: 'Demir Madeni', cat: 'hammadde', icon: '🏔️', cost: 1100, unlock: 5, height: 22,
+    produce: { inputs: {}, outputs: { demir: 1 }, minutes: 1.4 },
+    effect: { radius: 2, all: -6, tenants: { aile: -4, emekli: -4 } } },
+  petrol: { name: 'Petrol Kuyusu', cat: 'hammadde', icon: '🛢️', cost: 6000, unlock: 10, height: 20,
+    produce: { inputs: {}, outputs: { petrol: 1 }, minutes: 1.4 },
+    effect: { radius: 2, all: -8, tenants: { unlu: -10 } } },
+
+  // ---- Üretim zinciri: işleme fabrikaları ----
+  kereste: { name: 'Kereste Fabrikası', cat: 'isleme', icon: '🪚', cost: 1400, unlock: 3, height: 18,
+    produce: { inputs: { odun: 2 }, outputs: { kereste: 1 }, minutes: 1 },
+    smoke: { x: -0.2, y: 0.05 },
+    effect: { radius: 1, all: -3 } },
+  degirmen: { name: 'Un Değirmeni', cat: 'isleme', icon: '🌀', cost: 1600, unlock: 4, height: 30,
+    produce: { inputs: { bugday: 3 }, outputs: { un: 1 }, minutes: 1.3 },
+    effect: { radius: 1, all: 1 } },
+  cimento: { name: 'Çimento Fabrikası', cat: 'isleme', icon: '🏭', cost: 2500, unlock: 5, height: 26,
+    produce: { inputs: { kum: 2, komur: 1 }, outputs: { cimento: 1 }, minutes: 1.3 },
+    effect: { radius: 2, all: -6, tenants: { aile: -4 } } },
+  'cam-fabrikasi': { name: 'Cam Fabrikası', cat: 'isleme', icon: '🔥', cost: 3000, unlock: 6, height: 24,
+    produce: { inputs: { kum: 3, komur: 1 }, outputs: { cam: 1 }, minutes: 1.3 },
+    effect: { radius: 2, all: -5 } },
+  firin: { name: 'Fırın', cat: 'isleme', icon: '🥖', cost: 3500, unlock: 6, height: 18,
+    produce: { inputs: { un: 1 }, outputs: { ekmek: 1 }, minutes: 1.6 },
+    effect: { radius: 1, all: 4, tenants: { aile: 4, emekli: 4 } } },
+  celik: { name: 'Çelik Fabrikası', cat: 'isleme', icon: '⚙️', cost: 4500, unlock: 7, height: 32,
+    produce: { inputs: { demir: 2, komur: 1 }, outputs: { celik: 1 }, minutes: 1.6 },
+    effect: { radius: 2, all: -8, tenants: { aile: -6, emekli: -6 } } },
+  rafineri: { name: 'Rafineri', cat: 'isleme', icon: '🏗️', cost: 12000, unlock: 11, height: 32,
+    produce: { inputs: { petrol: 2 }, outputs: { plastik: 1 }, minutes: 2 },
+    effect: { radius: 3, all: -10, tenants: { aile: -6, unlu: -10 } } },
+  mobilya: { name: 'Mobilya Fabrikası', cat: 'isleme', icon: '🪑', cost: 8000, unlock: 12, height: 22,
+    produce: { inputs: { kereste: 3, plastik: 1, cam: 1 }, outputs: { mobilya: 1 }, minutes: 2.6 },
+    effect: { radius: 2, all: -3 } },
+
   gokdelen: {
     name: 'Gökdelen', cat: 'simge', icon: '🗼', cost: 20000, unlock: 16,
     height: 80,
     effect: { radius: 5, all: 15, tenants: { unlu: 12 } },
   },
 };
+
+// ---- Sanayileşme (Sanayi Baronu'ndan uyarlandı) ----
+// Mallar: tier 0 hammadde, 1 işlenmiş, 2 son ürün. price: pazarda baskı yokken birim fiyat
+export const RESOURCES = {
+  odun: { name: 'Odun', icon: '🪵', price: 2, tier: 0 },
+  kum: { name: 'Kum', icon: '⏳', price: 1.5, tier: 0 },
+  bugday: { name: 'Buğday', icon: '🌾', price: 1.5, tier: 0 },
+  komur: { name: 'Kömür', icon: '🌑', price: 3, tier: 0 },
+  demir: { name: 'Demir Cevheri', icon: '🪨', price: 3.5, tier: 0 },
+  petrol: { name: 'Ham Petrol', icon: '🛢️', price: 10, tier: 0 },
+  kereste: { name: 'Kereste', icon: '🪚', price: 7, tier: 1 },
+  un: { name: 'Un', icon: '🥣', price: 6, tier: 1 },
+  cimento: { name: 'Çimento', icon: '🧱', price: 9, tier: 1 },
+  cam: { name: 'Cam', icon: '🪟', price: 11, tier: 1 },
+  celik: { name: 'Çelik', icon: '🔩', price: 15, tier: 1 },
+  plastik: { name: 'Plastik', icon: '🧪', price: 30, tier: 1 },
+  ekmek: { name: 'Ekmek', icon: '🍞', price: 12, tier: 2 },
+  mobilya: { name: 'Mobilya', icon: '🛋️', price: 80, tier: 2 },
+};
+
+// Para dışında malzeme isteyen binalar (eksik mal pazardan alınabilir)
+export const MATS = {
+  apartman: { kereste: 10, cimento: 8 },
+  villa: { kereste: 20, cam: 10 },
+  rezidans: { celik: 30, cam: 30, cimento: 20 },
+  banka: { cimento: 20, cam: 10 },
+  avm: { celik: 60, cam: 40, mobilya: 10 },
+  hastane: { cimento: 30, celik: 10 },
+  otel: { cimento: 30, cam: 20, mobilya: 5 },
+  gokdelen: { celik: 150, cam: 120, mobilya: 30 },
+  saatkulesi: { cimento: 60, celik: 10 },
+  stadyum: { celik: 100, cimento: 100 },
+  fabrika: { celik: 40 },
+  lojistik: { celik: 20, cimento: 20 },
+  cimento: { kereste: 15 },
+  'cam-fabrikasi': { kereste: 15 },
+  firin: { kereste: 10, cimento: 10 },
+  celik: { kereste: 20 },
+  petrol: { celik: 20 },
+  rafineri: { celik: 40, cimento: 20 },
+  mobilya: { celik: 30, cam: 10 },
+};
+
+// Bina yükseltme: her seviye yeni görünüm (img/binalar/<tür>-<seviye>.png), daha çok kira/gelir
+// cost: binanın taban fiyatının katı, mult: kira/gelir çarpanı
+export const UPGRADES = {
+  ev: [{ cost: 1.5, mats: { kereste: 15, cimento: 10 }, mult: 1.6 }, { cost: 3, mats: { celik: 15, cam: 15, mobilya: 2 }, mult: 2.5 }],
+  apartman: [{ cost: 1.5, mats: { cimento: 25, cam: 15 }, mult: 1.6 }, { cost: 3, mats: { celik: 30, cam: 30, mobilya: 4 }, mult: 2.5 }],
+  villa: [{ cost: 1.5, mats: { cimento: 30, cam: 25 }, mult: 1.6 }, { cost: 3, mats: { celik: 40, cam: 40, mobilya: 8 }, mult: 2.5 }],
+  kafe: [{ cost: 1.5, mats: { kereste: 15, cimento: 10 }, mult: 1.7 }, { cost: 3, mats: { cam: 20, mobilya: 3, ekmek: 20 }, mult: 2.6 }],
+  market: [{ cost: 1.5, mats: { kereste: 20, cam: 10 }, mult: 1.7 }, { cost: 3, mats: { celik: 20, cam: 20, ekmek: 30 }, mult: 2.6 }],
+};
+
+// Aynı binanın farklı görünümleri: kurarken rastgele biri gelir (seviye 1'de)
+export const VARIANTS = {
+  ev: ['ev', 'ev-b', 'ev-c'],
+  apartman: ['apartman', 'apartman-b', 'apartman-c'],
+};
+
+// Depo ve mal pazarı
+export const INDUSTRY = {
+  depoBase: 100,           // her maldan en çok 100 adet (seviye 1)
+  depoGrowth: 2,           // her depo seviyesi kapasiteyi ikiye katlar
+  depoCostBase: 1500,      // depo yükseltme: 1500 × 3^seviye
+  depoCostGrowth: 3,
+  sensitivity: 0.0006,     // satılan 1 para değerindeki mal fiyatı bu kadar (üstel) düşürür
+  decayHours: 3,           // baskı ~3 oyun saatinde söner
+  buySpread: 1.10,         // alış satıştan %10 pahalı
+  minFactor: 0.25, maxFactor: 4,
+  maxOfflineHours: 8,      // uzun aradan sonra en çok 8 saatlik üretim
+};
+
+// Başarımlar: bir kez kazanılır, ödülü elmas ve para
+export const ACHIEVEMENTS = [
+  { id: 'ilk-ev', text: 'İlk evini kur', kind: 'count', type: 'ev', n: 1, reward: { diamonds: 1 } },
+  { id: 'on-ev', text: '10 konutun olsun', kind: 'cat', cat: 'konut', n: 10, reward: { diamonds: 3 } },
+  { id: 'ilk-villa', text: 'İlk villanı kur', kind: 'count', type: 'villa', n: 1, reward: { diamonds: 2 } },
+  { id: 'yukselt', text: 'Bir binayı 3. seviyeye çıkar', kind: 'maxLevel', n: 3, reward: { diamonds: 3 } },
+  { id: 'kira100', text: '100 kira topla', kind: 'stat', stat: 'rentsCollected', n: 100, reward: { diamonds: 5 } },
+  { id: 'memnun', text: 'Aynı anda 10 memnun kiracın olsun', kind: 'happy', n: 10, reward: { diamonds: 3 } },
+  { id: 'sanayi', text: 'İlk üretim binanı kur', kind: 'catAny', cats: ['hammadde', 'isleme'], n: 1, reward: { diamonds: 1 } },
+  { id: 'celik', text: '100 çelik üret', kind: 'produced', res: 'celik', n: 100, reward: { diamonds: 3 } },
+  { id: 'mobilya', text: 'İlk mobilyanı üret', kind: 'produced', res: 'mobilya', n: 1, reward: { diamonds: 3 } },
+  { id: 'tuccar', text: 'Pazarda 10.000 paralık mal sat', kind: 'stat', stat: 'goodsSold', n: 10000, reward: { diamonds: 3 } },
+  { id: 'mahalle', text: 'İkinci mahalleni aç', kind: 'hoods', n: 2, reward: { diamonds: 3 } },
+  { id: 'hikaye', text: '3 kiracı hikayesini tamamla', kind: 'stat', stat: 'storiesDone', n: 3, reward: { diamonds: 3 } },
+  { id: 'koleksiyon', text: 'Bir koleksiyon setini tamamla', kind: 'sets', n: 1, reward: { diamonds: 2 } },
+  { id: 'ozel', text: 'Elmasla bir özel yapı kur', kind: 'premium', n: 1, reward: { money: 5000 } },
+  { id: 'milyoner', text: 'Net değerini 1.000.000\'a çıkar', kind: 'netWorth', n: 1000000, reward: { diamonds: 10 } },
+];
 
 // Arazi özellikleri: dokümandaki "bazı parsellerde nehir, tepe gibi özellikler olur" kuralı.
 // buildable: üstüne bina/yol yapılabilir mi; nearBonus: radius içindeki evlere bonus; onBonus: üstündeki eve bonus.
@@ -300,6 +506,8 @@ export const CATEGORIES = {
   sanayi: { name: 'Sanayi', hint: 'Yüksek gelir, çevreye olumsuz etki' },
   simge: { name: 'Simge yapı', hint: 'Pahalı ve nadir; çok geniş alana bonus' },
   dekor: { name: 'Süsleme', hint: 'Ucuz; yakın evlere küçük bonus' },
+  hammadde: { name: 'Hammadde', hint: 'Depoya mal üretir: odun, kum, buğday, kömür, demir, petrol' },
+  isleme: { name: 'Sanayi Üretimi', hint: 'Hammaddeyi değerli mala çevirir: kereste, çimento, cam, çelik ...' },
 };
 
 // durations dakika cinsinden. Portre görseli: img/ui/kiraci-<id>.png. unlock: hangi seviyede gelmeye başlar

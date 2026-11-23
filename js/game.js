@@ -1,5 +1,6 @@
 // Oyun mantığı. Ekran çizimi ve dokunma burada yok; böylece testler tarayıcısız çalışır.
-import { CONFIG, BUILDINGS, TENANTS, QUESTS, TERRAIN, COLLECTION, HOODS, TALL, MARKET_EVENTS, STORIES, DAILY_GOALS } from './data.js';
+import { CONFIG, BUILDINGS, TENANTS, QUESTS, TERRAIN, COLLECTION, HOODS, TALL, MARKET_EVENTS, STORIES, DAILY_GOALS,
+  RESOURCES, MATS, UPGRADES, VARIANTS, INDUSTRY, ACHIEVEMENTS } from './data.js';
 
 export const MIN = 60 * 1000;
 export const HOUR = 60 * MIN;
@@ -43,7 +44,13 @@ export function hydrate(s) {
   if (!s.hood) { s.hood = 'eski'; s.hoodsOpen = ['eski']; s.hoods = {}; }
   if (!s.rareUnlocked) s.rareUnlocked = [];
   if (!s.stats.storiesDone) s.stats.storiesDone = 0;
-  for (const k of ['built', 'incomeCollected', 'renewals']) if (!s.stats[k]) s.stats[k] = 0;
+  for (const k of ['built', 'incomeCollected', 'renewals', 'goodsSold']) if (!s.stats[k]) s.stats[k] = 0;
+  if (!s.stats.produced) s.stats.produced = {};
+  if (!s.inv) s.inv = {};
+  for (const k of Object.keys(RESOURCES)) s.inv[k] = s.inv[k] || 0;
+  if (s.depoLevel === undefined) s.depoLevel = 0;
+  if (!s.pressure) s.pressure = {};
+  if (!s.achieved) s.achieved = [];
   if (!s.market) s.market = { nextEventAt: s.gameTime + CONFIG.market.eventEveryHours * HOUR / 2, nextHistAt: s.gameTime, hoods: {} };
   for (const id of s.hoodsOpen) ensureMarket(s, id);
   setActiveHood(s.hood);
@@ -144,7 +151,9 @@ export function switchHood(s, id) {
   setActiveHood(id);
   changed(s);
   // yokken biriken ticari gelir (bağlantı o sürede değişmedi)
-  accrueIncome(s, s.gameTime - (target.leftAt ?? s.gameTime));
+  const away = s.gameTime - (target.leftAt ?? s.gameTime);
+  accrueIncome(s, away);
+  produce(s, away);
   return ok();
 }
 
@@ -175,7 +184,7 @@ function isRoadTile(grid, x, y) {
   if (!inBounds(x, y)) return false;
   if (isAvenue(x, y)) return true;
   const b = grid[y][x];
-  return !!b && b.type === 'yol';
+  return !!b && isRoadType(b.type);
 }
 
 // Ana caddeden başlayıp yollar üzerinden ulaşılabilen kareleri bulur.
@@ -227,6 +236,10 @@ export function isRoadConnected(s, x, y) {
 }
 
 // ---------- Etki alanı ----------
+
+export function isRoadType(type) {
+  return BUILDINGS[type]?.cat === 'yol';
+}
 
 export function def(type) {
   return BUILDINGS[type];
@@ -371,7 +384,7 @@ export function availableTenants(s, houseType) {
 // Bir kartın bu evde şu anki değeri (kira, ücret, xp, talep durumu).
 export function quoteCard(s, house, card, waiveFee = false) {
   const bonus = bonusAt(s, house.x, house.y, card.tenant);
-  const rent = rentFor(house.type, card.tenant, card.minutes, bonus.total);
+  const rent = Math.round(rentFor(house.type, card.tenant, card.minutes, bonus.total) * levelMult(house));
   return {
     rent,
     fee: waiveFee ? 0 : Math.round(rent * CONFIG.signingFeeRate),
@@ -632,8 +645,13 @@ export function declineRenewal(s, houseId) {
 
 // ---------- Ticari gelir ----------
 
-export function storageCap(type) {
-  return Math.round(incomePerHour(type) * CONFIG.commercialStorageHours);
+// Ticari binanın kasası en çok kaç saatlik gelir tutar (b: bina ya da tür)
+export function storageCap(b) {
+  return Math.round(incomeOf(b) * CONFIG.commercialStorageHours);
+}
+
+export function incomeOf(b) {
+  return typeof b === 'string' ? incomePerHour(b) : Math.round(incomePerHour(b.type) * levelMult(b));
 }
 
 export function hasIncome(b) {
@@ -693,7 +711,10 @@ export function advance(s, realMs, rng = Math.random) {
   const dt = realMs * s.speed;
   s.gameTime += dt;
   accrueIncome(s, dt);
+  produce(s, dt);
+  goodsDecay(s, dt);
   marketTick(s, dt, rng);
+  checkAchievements(s);
   expireStories(s);
 }
 
@@ -702,8 +723,8 @@ function accrueIncome(s, dt) {
   if (dt <= 0) return;
   for (const b of Object.values(s.buildings)) {
     if (hasIncome(b) && isConnected(s, b)) {
-      const cap = storageCap(b.type);
-      b.stored = Math.min(cap, (b.stored || 0) + incomePerHour(b.type) * dt / HOUR);
+      const cap = storageCap(b);
+      b.stored = Math.min(cap, (b.stored || 0) + incomeOf(b) * dt / HOUR);
     }
   }
 }
@@ -745,7 +766,7 @@ export function buildCost(s, type) {
   return Math.round(d.cost * Math.pow(CONFIG.buildCostGrowth, countOf(s, type)) * marketIndex(s) / 100);
 }
 
-export function canPlace(s, x, y, ignoreId = null, size = 1) {
+export function canPlace(s, x, y, ignoreId = null, size = 1, type = null) {
   for (let dy = 0; dy < size; dy++) {
     for (let dx = 0; dx < size; dx++) {
       const tx = x + dx, ty = y + dy;
@@ -753,7 +774,9 @@ export function canPlace(s, x, y, ignoreId = null, size = 1) {
       if (!isUnlocked(s, tx, ty)) return fail('Bu arsa henüz açılmadı.');
       if (isAvenue(tx, ty)) return fail('Ana caddeye bina yapılamaz.');
       const ter = terrainAt(tx, ty);
-      if (ter && !TERRAIN[ter].buildable) return fail(`${TERRAIN[ter].name} üstüne bina yapılamaz.`);
+      // nehrin üstüne yalnız yol yapılabilir (köprü)
+      const bridge = ter === 'nehir' && type && isRoadType(type);
+      if (ter && !TERRAIN[ter].buildable && !bridge) return fail(`${TERRAIN[ter].name} üstüne bina yapılamaz.${ter === 'nehir' ? ' Yol yaparsan köprü olur.' : ''}`);
       const b = buildingAt(s, tx, ty);
       if (b && b.id !== ignoreId) return fail(size > 1 ? `Bu bina ${size}×${size} kare ister; yer dolu.` : 'Bu kare dolu.');
     }
@@ -761,21 +784,30 @@ export function canPlace(s, x, y, ignoreId = null, size = 1) {
   return ok();
 }
 
-export function build(s, type, x, y) {
+export function build(s, type, x, y, rng = Math.random) {
   const d = def(type);
   if (!d) return fail('Bilinmeyen bina.');
   if (d.unlock > s.level) return fail(`Seviye ${d.unlock} gerekli.`);
   if (d.rare && !s.rareUnlocked.includes(type)) return fail('Bu nadir süsleme bir kiracı hikayesiyle açılır.');
-  const p = canPlace(s, x, y, null, sizeOf(type));
+  const p = canPlace(s, x, y, null, sizeOf(type), type);
   if (!p.ok) return p;
   const cost = buildCost(s, type);
   if (s.money < cost) return fail('Yeterli para yok.');
+  if (d.diamondCost && s.diamonds < d.diamondCost) return fail(`${d.diamondCost} elmas gerekli.`);
+  const mats = MATS[type] || {};
+  const miss = missingMats(s, mats);
+  if (Object.keys(miss).length) return fail(`Eksik malzeme: ${matsText(miss)}`, { missing: miss });
   s.money -= cost;
+  if (d.diamondCost) s.diamonds -= d.diamondCost;
+  takeMats(s, mats);
   const id = `b${s.nextId++}`;
-  s.buildings[id] = { id, type, x, y, paid: cost, paidIndex: marketIndex(s), contract: null, renewal: null, cards: null, stored: 0 };
+  const vars = VARIANTS[type];
+  const variant = vars ? vars[Math.floor(rng() * vars.length) % vars.length] : null;
+  s.buildings[id] = { id, type, x, y, paid: cost + matsValue(mats), paidIndex: marketIndex(s), level: 1, variant,
+    contract: null, renewal: null, cards: null, stored: 0 };
   changed(s);
   if (cost > 0) addXp(s, Math.max(1, Math.round(cost / 25)));
-  if (type !== 'yol') s.stats.built++;
+  if (!isRoadType(type)) s.stats.built++;
   emit(s, 'built', { id, buildingType: type });
   return ok({ id, cost });
 }
@@ -783,7 +815,7 @@ export function build(s, type, x, y) {
 export function move(s, id, x, y) {
   const b = s.buildings[id];
   if (!b) return fail('Bina bulunamadı.');
-  const p = canPlace(s, x, y, id, sizeOf(b));
+  const p = canPlace(s, x, y, id, sizeOf(b), b.type);
   if (!p.ok) return p;
   b.x = x;
   b.y = y;
@@ -830,6 +862,271 @@ export function buyParcel(s, px, py) {
   addXp(s, Math.round(cost / 30));
   emit(s, 'parcel', { key });
   return ok({ cost });
+}
+
+// ---------- Sanayileşme: depo, üretim, mal pazarı (Sanayi Baronu'ndan) ----------
+
+export function depoCapacity(s) {
+  return INDUSTRY.depoBase * Math.pow(INDUSTRY.depoGrowth, s.depoLevel || 0);
+}
+
+export function depoUpgradeCost(s) {
+  return Math.round(INDUSTRY.depoCostBase * Math.pow(INDUSTRY.depoCostGrowth, s.depoLevel || 0));
+}
+
+export function upgradeDepo(s) {
+  const cost = depoUpgradeCost(s);
+  if (s.money < cost) return fail('Yeterli para yok.');
+  s.money -= cost;
+  s.depoLevel++;
+  return ok({ capacity: depoCapacity(s) });
+}
+
+export function freeSpace(s, res) {
+  return Math.max(0, depoCapacity(s) - (s.inv[res] || 0));
+}
+
+export function isProducer(b) {
+  return !!def(b.type).produce;
+}
+
+// Döngü süresi (oyun ms); Sanayi Bölgesi'nde %25 hızlı
+export function cycleMs(type) {
+  const p = def(type).produce;
+  return p.minutes * MIN / (1 + (H.industryBonus || 0));
+}
+
+// Üretim: her bina döngü süresi doldukça girdileri depodan alır, çıktıyı depoya koyar.
+// Önce hammadde, sonra işleme (veri sırasıyla), böylece zincir aynı adımda akar.
+function produce(s, dt) {
+  if (dt <= 0) return;
+  dt = Math.min(dt, INDUSTRY.maxOfflineHours * HOUR);
+  const list = Object.values(s.buildings).filter(isProducer).sort((a, b) => tierOf(a) - tierOf(b));
+  for (const b of list) {
+    if (!isConnected(s, b)) { b.pstate = 'baglantisiz'; continue; }
+    const p = def(b.type).produce;
+    const cyc = cycleMs(b.type);
+    b.prog = (b.prog || 0) + dt;
+    let guard = 0;
+    while (b.prog >= cyc && guard++ < 2000) {
+      const lacks = Object.entries(p.inputs).some(([k, n]) => (s.inv[k] || 0) < n);
+      if (lacks) { b.pstate = 'girdi'; b.prog = cyc; break; }
+      const full = Object.entries(p.outputs).some(([k, n]) => freeSpace(s, k) < n);
+      if (full) { b.pstate = 'dolu'; b.prog = cyc; break; }
+      for (const [k, n] of Object.entries(p.inputs)) s.inv[k] -= n;
+      for (const [k, n] of Object.entries(p.outputs)) {
+        s.inv[k] += n;
+        s.stats.produced[k] = (s.stats.produced[k] || 0) + n;
+      }
+      b.prog -= cyc;
+      b.pstate = 'calisiyor';
+    }
+  }
+}
+
+function tierOf(b) {
+  return def(b.type).cat === 'hammadde' ? 0 : 1;
+}
+
+export function producerStatus(s, b) {
+  if (!isConnected(s, b)) return 'baglantisiz';
+  return b.pstate || 'calisiyor';
+}
+
+// Saatte üretim (bu bina)
+export function ratePerHour(type) {
+  const p = def(type).produce;
+  const perHour = HOUR / cycleMs(type);
+  return { inputs: mapVals(p.inputs, n => n * perHour), outputs: mapVals(p.outputs, n => n * perHour) };
+}
+
+function mapVals(o, f) {
+  return Object.fromEntries(Object.entries(o).map(([k, v]) => [k, f(v)]));
+}
+
+// Mal pazarı: satış fiyatı arttıkça düşer, zamanla taban fiyata döner
+function priceFactor(s, res) {
+  const f = Math.exp(-INDUSTRY.sensitivity * (s.pressure[res] || 0));
+  return clamp(f, INDUSTRY.minFactor, INDUSTRY.maxFactor);
+}
+
+export function goodsSellPrice(s, res) {
+  return RESOURCES[res].price * priceFactor(s, res);
+}
+
+export function goodsBuyPrice(s, res) {
+  return goodsSellPrice(s, res) * INDUSTRY.buySpread;
+}
+
+export function goodsFactor(s, res) {
+  return priceFactor(s, res);
+}
+
+// qty adetlik işlemin toplam tutarı (fiyat işlem boyunca kayar)
+export function goodsQuote(s, res, qty, side) {
+  const base = RESOURCES[res].price;
+  const delta = base * qty * (side === 'sell' ? 1 : -1);
+  const mid = base * clamp(Math.exp(-INDUSTRY.sensitivity * ((s.pressure[res] || 0) + delta / 2)), INDUSTRY.minFactor, INDUSTRY.maxFactor);
+  const unit = side === 'sell' ? mid : mid * INDUSTRY.buySpread;
+  return Math.round(unit * qty);
+}
+
+export function sellGoods(s, res, qty) {
+  qty = Math.min(qty, s.inv[res] || 0);
+  if (qty <= 0) return fail('Depoda bu maldan yok.');
+  const total = goodsQuote(s, res, qty, 'sell');
+  s.inv[res] -= qty;
+  s.pressure[res] = (s.pressure[res] || 0) + RESOURCES[res].price * qty;
+  s.money += total;
+  s.stats.goodsSold += total;
+  s.stats.moneyEarned += total;
+  emit(s, 'goodsSold', { res, qty, total });
+  return ok({ qty, total });
+}
+
+export function buyGoods(s, res, qty) {
+  if (qty <= 0) return fail('Geçersiz miktar.');
+  if (freeSpace(s, res) < qty) return fail('Depoda yer yok. Depoyu büyüt.');
+  const total = goodsQuote(s, res, qty, 'buy');
+  if (s.money < total) return fail('Yeterli para yok.');
+  s.money -= total;
+  s.inv[res] += qty;
+  s.pressure[res] = (s.pressure[res] || 0) - RESOURCES[res].price * qty;
+  return ok({ qty, total });
+}
+
+function goodsDecay(s, dt) {
+  const f = Math.exp(-dt / (INDUSTRY.decayHours * HOUR));
+  for (const k of Object.keys(s.pressure)) {
+    s.pressure[k] *= f;
+    if (Math.abs(s.pressure[k]) < 0.01) s.pressure[k] = 0;
+  }
+}
+
+// ---------- Malzemeler ----------
+
+export function matsFor(type) {
+  return MATS[type] || {};
+}
+
+export function missingMats(s, mats) {
+  const out = {};
+  for (const [k, n] of Object.entries(mats)) if ((s.inv[k] || 0) < n) out[k] = n - (s.inv[k] || 0);
+  return out;
+}
+
+export function matsText(mats) {
+  return Object.entries(mats).map(([k, n]) => `${n} ${RESOURCES[k].name}`).join(', ');
+}
+
+function takeMats(s, mats) {
+  for (const [k, n] of Object.entries(mats)) s.inv[k] -= n;
+}
+
+function matsValue(mats) {
+  return Object.entries(mats).reduce((a, [k, n]) => a + RESOURCES[k].price * n, 0);
+}
+
+// Eksik malzemeleri pazardan almanın tutarı
+export function missingCost(s, mats) {
+  return Object.entries(missingMats(s, mats)).reduce((a, [k, n]) => a + goodsQuote(s, k, n, 'buy'), 0);
+}
+
+export function buyMissing(s, mats) {
+  const miss = missingMats(s, mats);
+  const total = missingCost(s, mats);
+  if (s.money < total) return fail('Eksik malzemeleri almaya para yetmiyor.');
+  for (const [k, n] of Object.entries(miss)) {
+    const r = buyGoods(s, k, n);
+    if (!r.ok) return r;
+  }
+  return ok({ total });
+}
+
+// ---------- Bina yükseltme ----------
+
+export function levelMult(b) {
+  const ups = UPGRADES[b.type];
+  if (!ups || !b.level || b.level <= 1) return 1;
+  return ups[b.level - 2].mult;
+}
+
+export function nextUpgrade(b) {
+  const ups = UPGRADES[b.type];
+  const lvl = b.level || 1;
+  if (!ups || lvl > ups.length) return null;
+  const u = ups[lvl - 1];
+  return { level: lvl + 1, mats: u.mats, mult: u.mult, costFactor: u.cost };
+}
+
+export function upgradeCost(s, b) {
+  const u = nextUpgrade(b);
+  if (!u) return 0;
+  return Math.round(def(b.type).cost * u.costFactor * marketIndex(s) / 100);
+}
+
+export function upgrade(s, id) {
+  const b = s.buildings[id];
+  const u = b && nextUpgrade(b);
+  if (!u) return fail('Bu bina daha fazla yükseltilemez.');
+  const cost = upgradeCost(s, b);
+  if (s.money < cost) return fail('Yeterli para yok.');
+  const miss = missingMats(s, u.mats);
+  if (Object.keys(miss).length) return fail(`Eksik malzeme: ${matsText(miss)}`, { missing: miss });
+  s.money -= cost;
+  takeMats(s, u.mats);
+  b.level = u.level;
+  b.paid = (b.paid || 0) + cost + matsValue(u.mats);
+  changed(s);
+  addXp(s, Math.round(cost / 30));
+  emit(s, 'upgraded', { id, x: b.x, y: b.y, level: b.level });
+  return ok({ level: b.level, cost });
+}
+
+// Görünüm: seviyeye ya da kurulan görünüme göre görsel adı
+export function spriteKey(b) {
+  if (b.level > 1 && UPGRADES[b.type]) return `${b.type}-${b.level}`;
+  return b.variant || b.type;
+}
+
+// ---------- Başarımlar ----------
+
+let achCheckedAt = -Infinity;
+function checkAchievements(s) {
+  if (s.gameTime - achCheckedAt < 20 * 1000 && s.gameTime >= achCheckedAt) return;
+  achCheckedAt = s.gameTime;
+  for (const a of ACHIEVEMENTS) {
+    if (s.achieved.includes(a.id)) continue;
+    if (achievementProgress(s, a) >= a.n) {
+      s.achieved.push(a.id);
+      s.diamonds += a.reward.diamonds || 0;
+      s.money += a.reward.money || 0;
+      emit(s, 'achievement', { id: a.id, text: a.text, reward: a.reward });
+    }
+  }
+}
+
+export function achievementProgress(s, a) {
+  const all = allBuildings(s);
+  switch (a.kind) {
+    case 'count': return all.filter(b => b.type === a.type).length;
+    case 'cat': return all.filter(b => def(b.type).cat === a.cat).length;
+    case 'catAny': return all.filter(b => a.cats.includes(def(b.type).cat)).length;
+    case 'maxLevel': return Math.max(1, ...all.map(b => b.level || 1));
+    case 'stat': return s.stats[a.stat] || 0;
+    case 'happy': return Object.values(s.buildings).filter(h => isHouse(h) && h.contract && satisfaction(s, h) >= CONFIG.satHappy).length;
+    case 'produced': return s.stats.produced[a.res] || 0;
+    case 'hoods': return s.hoodsOpen.length;
+    case 'sets': return s.collectionSets || 0;
+    case 'premium': return all.filter(b => def(b.type).premium).length;
+    case 'netWorth': return netWorth(s);
+    default: return 0;
+  }
+}
+
+// Bütün mahallelerdeki binalar
+export function allBuildings(s) {
+  return [...Object.values(s.buildings), ...Object.values(s.hoods || {}).flatMap(h => Object.values(h.buildings))];
 }
 
 // ---------- Emlak piyasası ----------
@@ -950,6 +1247,7 @@ export function addXp(s, amount) {
 // Net değer: nakit + binaların satış değeri + arsalar (güncel endeksle)
 export function netWorth(s) {
   let v = s.money;
+  for (const [k, r] of Object.entries(RESOURCES)) v += (s.inv?.[k] || 0) * r.price;
   const all = [[s.hood, { buildings: s.buildings, parcelsPaid: s.parcelsPaid }], ...Object.entries(s.hoods || {})];
   for (const [id, hd] of all) {
     const idx = marketIndex(s, id);
@@ -1009,8 +1307,8 @@ function ok(extra = {}) {
   return { ok: true, ...extra };
 }
 
-function fail(msg) {
-  return { ok: false, msg };
+function fail(msg, extra = {}) {
+  return { ok: false, msg, ...extra };
 }
 
 export function formatDuration(ms) {

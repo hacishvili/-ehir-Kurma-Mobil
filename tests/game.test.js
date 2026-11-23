@@ -9,6 +9,9 @@ function rich() {
   const s = G.createState();
   s.money = 1e7;
   s.level = 20;
+  // testlerde malzeme sıkıntısı olmasın
+  s.depoLevel = 10;
+  for (const k of Object.keys(s.inv)) s.inv[k] = 5000;
   return s;
 }
 
@@ -206,12 +209,12 @@ test('etkisinde kiracı ayrımı olmayan binalar da bonus verir', () => {
   assert.equal(G.bonusAt(s, 6, 6, 'aile').total, 10);
 });
 
-test('nehre bina ve yol yapılamaz; nehir kenarındaki ev ve tepedeki ev bonus alır', () => {
+test('nehre bina yapılamaz, yol köprü olur; nehir kenarındaki ev ve tepedeki ev bonus alır', () => {
   const s = rich();
   G.buyParcel(s, 1, 2);
   assert.equal(G.terrainAt(6, 10), 'nehir');
   assert.equal(G.build(s, 'ev', 6, 10).ok, false);
-  assert.equal(G.build(s, 'yol', 7, 10).ok, false);
+  assert.ok(G.build(s, 'yol', 7, 10).ok, 'nehre yol yapılırsa köprü olur');
   assert.equal(G.bonusAt(s, 6, 9).total, 8, 'nehir manzarası');
   assert.equal(G.bonusAt(s, 6, 8).total, 0, 'nehirden uzak');
   G.buyParcel(s, 2, 0);
@@ -446,4 +449,91 @@ test('günlük hedefler: günde 3 hedef, aynı gün aynı, ilerleme ve elmas öd
   assert.equal(last.bonus, 2);
   assert.equal(s.diamonds, dia + 3 + 2);
   assert.notEqual(G.ensureDaily(s, '2026-11-24'), d1, 'ertesi gün yeni hedefler');
+});
+
+function fresh(level = 20) {
+  const s = G.createState();
+  s.money = 1e7;
+  s.level = level;
+  s.market.nextEventAt = Infinity;
+  return s;
+}
+
+test('üretim zinciri: orman odun üretir, kereste fabrikası odunu keresteye çevirir', () => {
+  const s = fresh();
+  const o1 = G.build(s, 'orman', AX + 1, 4).id;
+  const o2 = G.build(s, 'orman', AX + 1, 5).id;
+  const k = G.build(s, 'kereste', AX + 1, 6).id;
+  assert.ok(o1 && o2 && k);
+  G.advance(s, 10 * G.MIN);
+  assert.ok(s.inv.kereste >= 8, `kereste: ${s.inv.kereste}`);
+  assert.ok(s.inv.odun < 20, 'odun tüketildi');
+});
+
+test('girdi yoksa fabrika bekler, depo dolunca üretim durur', () => {
+  const s = fresh();
+  const k = G.build(s, 'kereste', AX + 1, 6).id;
+  G.advance(s, 5 * G.MIN);
+  assert.equal(G.producerStatus(s, s.buildings[k]), 'girdi');
+  const o = G.build(s, 'orman', AX + 1, 4).id;
+  s.inv.odun = G.depoCapacity(s);
+  G.sell(s, k);
+  G.advance(s, 5 * G.MIN);
+  assert.equal(G.producerStatus(s, s.buildings[o]), 'dolu');
+  assert.ok(G.upgradeDepo(s).ok);
+  assert.equal(G.depoCapacity(s), 200);
+});
+
+test('mal pazarı: çok satınca fiyat düşer, zamanla toparlanır, alış satıştan pahalı', () => {
+  const s = fresh();
+  s.inv.celik = 100;
+  const p0 = G.goodsSellPrice(s, 'celik');
+  assert.ok(G.goodsBuyPrice(s, 'celik') > p0);
+  const r = G.sellGoods(s, 'celik', 100);
+  assert.ok(r.ok && r.total > 0 && r.total < p0 * 100);
+  assert.ok(G.goodsSellPrice(s, 'celik') < p0);
+  G.advance(s, 24 * G.HOUR);
+  assert.ok(Math.abs(G.goodsSellPrice(s, 'celik') - p0) < 0.01);
+});
+
+test('malzemeli bina: eksik malzeme varsa kurulmaz, pazardan alınınca kurulur', () => {
+  const s = fresh();
+  const r = G.build(s, 'apartman', AX + 1, 5);
+  assert.equal(r.ok, false);
+  assert.ok(r.missing.kereste === 10 && r.missing.cimento === 8);
+  const cost = G.missingCost(s, G.matsFor('apartman'));
+  const m = s.money;
+  assert.ok(G.buyMissing(s, G.matsFor('apartman')).ok);
+  assert.equal(s.money, m - cost);
+  assert.ok(G.build(s, 'apartman', AX + 1, 5).ok);
+  assert.equal(s.inv.kereste, 0);
+});
+
+test('yükseltme: seviye artar, görünüm değişir, kira çarpanı artar', () => {
+  const s = fresh();
+  for (const k of Object.keys(s.inv)) s.inv[k] = 100;
+  const id = G.build(s, 'ev', AX + 1, 5, () => 0.5).id;
+  const h = s.buildings[id];
+  assert.equal(G.spriteKey(h), 'ev-b', 'ortadaki görünüm');
+  h.cards = [{ tenant: 'genc', minutes: 60, demand: null }];
+  const r1 = G.quoteCard(s, h, h.cards[0]).rent;
+  assert.ok(G.upgrade(s, id).ok);
+  assert.equal(h.level, 2);
+  assert.equal(G.spriteKey(h), 'ev-2');
+  assert.ok(G.quoteCard(s, h, h.cards[0]).rent > r1 * 1.5);
+  assert.ok(G.upgrade(s, id).ok);
+  assert.equal(G.upgrade(s, id).ok, false, 'en çok 3. seviye');
+});
+
+test('özel yapı elmasla alınır; başarım ödülü verir', () => {
+  const s = fresh();
+  s.diamonds = 10;
+  assert.equal(G.build(s, 'ozel-kule', AX + 1, 5).ok, false);
+  s.diamonds = 100;
+  assert.ok(G.build(s, 'ozel-kule', AX + 1, 5).ok);
+  assert.equal(s.diamonds, 40);
+  G.build(s, 'ev', AX + 1, 6);
+  G.advance(s, G.MIN);
+  assert.ok(s.achieved.includes('ilk-ev'));
+  assert.ok(s.achieved.includes('ozel'));
 });
